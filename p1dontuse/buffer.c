@@ -12,15 +12,15 @@
 #include "minithread.h"
 #include "synch.h"
 #include "random.h"
-
 #define BUFFER_SIZE 16
-static const int MAXCOUNT = 1000;
 
-static int buffer[BUFFER_SIZE];
-static int size = 0, head = 0, tail = 0;
+#define MAXCOUNT  1000
 
-static semaphore_t *empty = NULL;
-static semaphore_t *full = NULL;
+int buffer[BUFFER_SIZE];
+int size, head, tail;
+
+semaphore_t empty;
+semaphore_t full;
 
 int consumer(int* arg) {
   int n, i;

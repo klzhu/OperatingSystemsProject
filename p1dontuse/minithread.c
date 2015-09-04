@@ -26,19 +26,19 @@
 
 /* minithread functions */
 
-minithread_t*
+minithread_t
 minithread_fork(proc_t proc, arg_t arg) {
-    return NULL;
+    return (minithread_t)0;
 }
 
-minithread_t*
+minithread_t
 minithread_create(proc_t proc, arg_t arg) {
-    return NULL;
+    return (minithread_t)0;
 }
 
-minithread_t*
+minithread_t
 minithread_self() {
-    return NULL;
+    return (minithread_t)0;
 }
 
 int
@@ -51,13 +51,26 @@ minithread_stop() {
 }
 
 void
-minithread_start(minithread_t *t) {
+minithread_start(minithread_t t) {
 }
 
 void
 minithread_yield() {
 }
 
+/*
+ * Initialization.
+ *
+ *      minithread_system_initialize:
+ *       This procedure should be called from your C main procedure
+ *       to turn a single threaded UNIX process into a multithreaded
+ *       program.
+ *
+ *       Initialize any private data structures.
+ *       Fork the thread which should call mainproc(mainarg)
+ *       Start scheduling.
+ *
+ */
 void
 minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 }

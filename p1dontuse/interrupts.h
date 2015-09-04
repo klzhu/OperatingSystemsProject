@@ -74,8 +74,7 @@ typedef void(*interrupt_handler_t)(void*);
  * in order to reduce the impact on the real-time performance of your system.
  */
 
-interrupt_level_t set_interrupt_level(interrupt_level_t newlevel);
-
+extern interrupt_level_t set_interrupt_level(interrupt_level_t newlevel);
 /*
  * minithread_clock_init installs your clock interrupt service routine
  * h.  h will be called every PERIOD microseconds (defined above).
@@ -83,7 +82,7 @@ interrupt_level_t set_interrupt_level(interrupt_level_t newlevel);
  * After you enable interrupts then your handler will be called
  * automatically on every clock tick.
  */
-void minithread_clock_init(interrupt_handler_t h);
+extern void minithread_clock_init(interrupt_handler_t h);
 
 #endif /* __INTERRUPTS_H__ */
 
