@@ -10,7 +10,7 @@
  * represented.  They see and manipulate only queue_t's.
  */
 typedef struct queue queue_t;
-
+/*test*/
 /*
  * Return an empty queue.  Returns NULL on error.
  */
