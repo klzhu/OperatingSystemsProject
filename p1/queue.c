@@ -46,7 +46,14 @@ queue_prepend(queue_t *queue, void* item) {
 
 int
 queue_append(queue_t *queue, void* item) {
-    return -1;
+	Node* newItem = malloc(sizeof(Node));
+	newItem->elem = item;
+	newItem->next = NULL;
+	queue->tail->next = newItem;
+	queue->tail = newItem;
+	queue->elems++;
+
+	return 0;//success, return -1 if error
 }
 
 int
