@@ -15,26 +15,30 @@ struct Node * next;
 struct Node* head;//first elem//struct Node?? that is t struct before node or not?
 struct Node* tail;//last elem
 int length;//size
-}queue;
+}queue;/**/
+
+
+
+
+
 
 queue_t* queue_new() {
-	queue_t* q = malloc(sizeof(queue_t));
-	q->head = NULL;
-	q->tail = NULL;
-	q->length = 0;
-	return q;
+	queue_t* q=(queue_t*)malloc(sizeof(queue_t));
+	q->head=NULL;
+	q->tail=NULL;
+	q->elems=0;
+	return q;/**/
 	/*WHEN would there be error?
     return NULL;*/
-    //return NULL;
+    return NULL;
 }
 
 int
 queue_prepend(queue_t *queue, void* item) {
-	struct Node* temp= malloc(sizeof(Node));
-	temp->elem = item;
-	temp->next = queue->head;
-	queue->head = temp;
-	queue->length++;
+	struct Node* temp=(struct  Node *)malloc(sizeof( struct  Node));
+	temp->elem=item;
+	temp->next=queue->head;
+	queue->head=temp;/**/
 	return 0;
 	/*when error?
     return -1;*/
@@ -47,7 +51,7 @@ queue_append(queue_t *queue, void* item) {
 	newItem->next = NULL;
 	queue->tail->next = newItem;
 	queue->tail = newItem;
-	queue->length++;
+	queue->elems++;
 
 	return 0;//success, return -1 if error
 }
