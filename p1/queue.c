@@ -26,7 +26,7 @@ queue_t* queue_new() {
 	queue_t* q=(queue_t*)malloc(sizeof(queue_t));
 	q->head=NULL;
 	q->tail=NULL;
-	q->elems=0;
+	q->length=0;
 	return q;/**/
 	/*WHEN would there be error?
     return NULL;*/
@@ -51,7 +51,7 @@ queue_append(queue_t *queue, void* item) {
 	newItem->next = NULL;
 	queue->tail->next = newItem;
 	queue->tail = newItem;
-	queue->elems++;
+	queue->length++;
 
 	return 0;//success, return -1 if error
 }
@@ -90,7 +90,7 @@ queue_length(const queue_t *queue) {
 int
 queue_delete(queue_t *queue, void* item) {
 	
-	if(queue->head->elem=item){
+	if(queue->head->elem==item){
             Node* next=queue->head->next;
             free(queue->head);
             queue->head=next;
@@ -102,7 +102,7 @@ queue_delete(queue_t *queue, void* item) {
         Node* n=queue->head->next;
         int i=1;
 	    for(;i<queue->length;i++){
-		    if(n->elem=item){
+		    if(n->elem==item){
                 Node* newnext=n->next;
                 free(n);
                 prev->next=newnext;
