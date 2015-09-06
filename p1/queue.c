@@ -8,31 +8,38 @@
 
  typedef struct Node{
 void* elem;//value of current element or pointer to value of current element? rn its pointer
-Node* next;
+struct Node * next;
 }Node;
 
-typedef struct queue queue_t{
-Node* head;//first elem//struct Node?? that is t struct before node or not?
-Node* end;//last elem
-int elems;//size
-}queue_t;
+ typedef struct queue {
+struct Node* head;//first elem//struct Node?? that is t struct before node or not?
+struct Node* tail;//last elem
+int length;//size
+}queue;/**/
+
+
+
+
+
 
 queue_t* queue_new() {
 	queue_t* q=(queue_t*)malloc(sizeof(queue_t));
 	q->head=NULL;
 	q->tail=NULL;
 	q->elems=0;
-	return q;
+	return q;/**/
 	/*WHEN would there be error?
     return NULL;*/
+    return NULL;
 }
 
 int
 queue_prepend(queue_t *queue, void* item) {
-	Node* temp=(Node *)malloc(sizeof( Node));
+	struct Node* temp=(struct  Node *)malloc(sizeof( struct  Node));
 	temp->elem=item;
 	temp->next=queue->head;
-	queue->head=temp;
+	queue->head=temp;/**/
+	return 0;
 	/*when error?
     return -1;*/
 }
@@ -44,7 +51,13 @@ queue_append(queue_t *queue, void* item) {
 
 int
 queue_dequeue(queue_t *queue, void** item) {
-    return -1;
+	item=&(queue->head->elem);
+	struct Node* tempNext=queue->head->next;
+	free(queue->head);
+	queue->head=tempNext;/**/
+	return 0;
+	/*
+    return -1;*/
 }
 
 int
@@ -59,7 +72,8 @@ queue_free (queue_t *queue) {
 
 int
 queue_length(const queue_t *queue) {
-    return -1;
+	return queue->length;
+   /* return -1;*/
 }
 
 int
