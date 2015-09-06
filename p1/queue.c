@@ -6,39 +6,45 @@
 #include <stdlib.h>
 #include <stdio.h>
 
- typedef struct Node{
+typedef struct node{
 void* elem;//value of current element or pointer to value of current element? rn its pointer
-struct Node * next;
-}Node;
+struct node * next;
+}node;
 
- typedef struct queue {
-struct Node* head;//first elem//struct Node?? that is t struct before node or not?
-struct Node* tail;//last elem
+typedef struct queue {
+struct node* head;//first elem//struct Node?? that is t struct before node or not?
+struct node* tail;//last elem
 int length;//size
-}queue;/**/
-
-
-
-
-
+}queue_t;
 
 queue_t* queue_new() {
-	queue_t* q=(queue_t*)malloc(sizeof(queue_t));
+	queue_t* q = malloc(sizeof(queue_t));
 	q->head=NULL;
 	q->tail=NULL;
 	q->length=0;
-	return q;/**/
+	return q;
 	/*WHEN would there be error?
     return NULL;*/
-    return NULL;
 }
 
 int
 queue_prepend(queue_t *queue, void* item) {
-	struct Node* temp=(struct  Node *)malloc(sizeof( struct  Node));
-	temp->elem=item;
-	temp->next=queue->head;
-	queue->head=temp;/**/
+	node *newItem = malloc(sizeof(node))
+	newItem->elem = item;
+	//if head is null, queue is empty
+	if (queue->head == NULL)
+	{
+		queue->head = newItem;
+		queue->head->next = NULL;
+	}
+	//queue is not empty
+	else
+	{	
+		newItem->next = queue->head;
+		queue->head = newItem;
+	}
+
+	queue->length++;
 	return 0;
 	/*when error?
     return -1;*/
@@ -46,13 +52,22 @@ queue_prepend(queue_t *queue, void* item) {
 
 int
 queue_append(queue_t *queue, void* item) {
-	Node* newItem = malloc(sizeof(Node));
+	node* newItem = malloc(sizeof(node));
 	newItem->elem = item;
 	newItem->next = NULL;
-	queue->tail->next = newItem;
-	queue->tail = newItem;
-	queue->length++;
+	//if head is null, queue is empty
+	if (queue->head == NULL)
+	{
+		queue->head = newItem;
+	}
+	//queue is not empty
+	else 
+	{
+		queue->tail->next = newItem;
+		queue->tail = newItem;
+	}
 
+	queue->length++;
 	return 0;//success, return -1 if error
 }
 
