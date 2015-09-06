@@ -15,7 +15,7 @@ typedef struct queue {
 struct node* head;//first elem//struct Node?? that is t struct before node or not?
 struct node* tail;//last elem
 int length;//size
-}queue_t;
+}queue;
 
 queue_t* queue_new() {
 	queue_t* q = malloc(sizeof(queue_t));
@@ -29,12 +29,13 @@ queue_t* queue_new() {
 
 int
 queue_prepend(queue_t *queue, void* item) {
-	node *newItem = malloc(sizeof(node))
+	node *newItem = malloc(sizeof(node));
 	newItem->elem = item;
 	//if head is null, queue is empty
-	if (queue->head == NULL)
+	if (queue->length == 0)
 	{
 		queue->head = newItem;
+		queue->tail = newItem;
 		queue->head->next = NULL;
 	}
 	//queue is not empty
@@ -56,9 +57,10 @@ queue_append(queue_t *queue, void* item) {
 	newItem->elem = item;
 	newItem->next = NULL;
 	//if head is null, queue is empty
-	if (queue->head == NULL)
+	if (queue->length == 0)
 	{
 		queue->head = newItem;
+		queue->tail = newItem;
 	}
 	//queue is not empty
 	else 
@@ -73,13 +75,29 @@ queue_append(queue_t *queue, void* item) {
 
 int
 queue_dequeue(queue_t *queue, void** item) {
-	item=&(queue->head->elem);
-	struct Node* tempNext=queue->head->next;
-	free(queue->head);
-	queue->head=tempNext;/**/
+	//our queue is empty
+	if (queue->length == 0)
+	{
+		*item = NULL;
+		return -1;
+	}
+	//only 1 item in our queue
+	else if (queue->length == 1)
+	{
+		*item = (queue->head->elem); //get the address of head node's element pointer
+		free(queue->head);
+		queue->head = NULL;
+	}
+	//more than 1 item in our queue
+	else if (queue->length >1)
+	{
+		*item = (queue->head->elem); //get the address of head node's element pointer
+		node *newHead = queue->head->next;
+		free(queue->head);
+		queue->head = newHead;
+	}
+
 	return 0;
-	/*
-    return -1;*/
 }
 
 int
@@ -124,8 +142,14 @@ queue_free (queue_t *queue) {
 
 int
 queue_length(const queue_t *queue) {
-	return queue->length;
-   /* return -1;*/
+	if (queue->length < 0)
+	{
+		return -1;
+	}
+	else
+	{
+		return queue->length;
+	}
 }
 
 /*
@@ -134,21 +158,36 @@ queue_length(const queue_t *queue) {
  */
 int
 queue_delete(queue_t *queue, void* item) {
-	
-	if(queue->head->elem==item){
-            Node* next=queue->head->next;
+	//if queue is empty
+	if (queue->length == 0)
+	{
+		return -1;
+	}
+	//only 1 item in our queue
+	else if (queue->length == 1)
+	{
+		//if our head contains item
+		if (queue->head->elem == item);
+	}
+
+	else
+	{
+		//if our head contains the item
+		if(queue->head->elem==item){
+			//if (queue->length == 1) //only 1 item in our queue
+        	node* next=queue->head->next;
             free(queue->head);
             queue->head=next;
             queue->length--;
 			return 0;
 	}
 	else{
-		Node* prev=queue->head;
-        Node* n=queue->head->next;
+		node* prev=queue->head;
+        node* n=queue->head->next;
         int i=1;
 	    for(;i<queue->length;i++){
 		    if(n->elem==item){
-                Node* newnext=n->next;
+                node* newnext=n->next;
                 free(n);
                 prev->next=newnext;
                 queue->length--;
@@ -158,5 +197,6 @@ queue_delete(queue_t *queue, void* item) {
 		    n=n->next;
 	    }
     }
-    return -1;
+	}
+	    return -1;
 }
