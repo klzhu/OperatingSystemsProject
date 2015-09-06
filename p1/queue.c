@@ -83,7 +83,35 @@ queue_length(const queue_t *queue) {
    /* return -1;*/
 }
 
+/*
+ * Delete the first instance of the specified item from the given queue.
+ * Returns 0 if an element was deleted, or -1 otherwise.
+ */
 int
 queue_delete(queue_t *queue, void* item) {
+	
+	if(queue->head->elem=item){
+            Node* next=queue->head->next;
+            free(queue->head);
+            queue->head=next;
+            queue->length--;
+			return 0;
+	}
+	else{
+		Node* prev=queue->head;
+        Node* n=queue->head->next;
+        int i=1;
+	    for(;i<queue->length;i++){
+		    if(n->elem=item){
+                Node* newnext=n->next;
+                free(n);
+                prev->next=newnext;
+                queue->length--;
+			    return 0;
+		    }
+		    prev=n;
+		    n=n->next;
+	    }
+    }
     return -1;
 }
