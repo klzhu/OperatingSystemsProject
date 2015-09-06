@@ -97,6 +97,7 @@ queue_dequeue(queue_t *queue, void** item) {
 		queue->head = newHead;
 	}
 
+	queue->length--;
 	return 0;
 }
 
