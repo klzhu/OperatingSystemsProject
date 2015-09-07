@@ -145,6 +145,7 @@ queue_free (queue_t *queue) {
 		queue->tail=NULL;
 		queue->length=0;
 		free(queue);
+		queue=NULL;
 	}
 	return 0;
 }
@@ -172,6 +173,7 @@ queue_delete(queue_t *queue, void* item) {
 	{
 		return -1;
 	}
+	//else{
 	/*//only 1 item in our queue
 	else if (queue->length == 1)
 	{
@@ -179,8 +181,8 @@ queue_delete(queue_t *queue, void* item) {
 		if (queue->head->elem == item);
 	}*/
 
-	else if (queue->length == 1)
-	{
+	//else if (queue->length == 1)
+	//{
 		//if our head contains the item
 		if(queue->head->elem==item){
 			//if (queue->length == 1) //only 1 item in our queue
@@ -193,11 +195,14 @@ queue_delete(queue_t *queue, void* item) {
 	else{
 		node* prev=queue->head;
         node* n=queue->head->next;
-        int i=1;
-	    for(;i<=queue->length;i++){
+        //int i=1;
+	    //for(;i<=queue->length;i++)
+	    while(n!=NULL)
+	    {
 		    if(n->elem==item){
                 node* newnext=n->next;
                 free(n);
+                n=NULL;
                 prev->next=newnext;
                 queue->length--;
 			    return 0;
@@ -205,7 +210,7 @@ queue_delete(queue_t *queue, void* item) {
 		    prev=n;
 		    n=n->next;
 	    }
-    }
-	}
+      }
+	//}
 	    return -1;
 }

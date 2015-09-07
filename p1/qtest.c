@@ -87,7 +87,7 @@ assert(j==3);
 printf("iteration %d \n",queue_iterate(q, func, n2));//shud print 2
 queue_delete(q,n2);
 assert(queue_length(q)==0);
-assert(queue_dequeue(q,dptr)==-1);//ERRRRR
+assert(queue_dequeue(q,dptr)==-1);
 assert(queue_length(q)==0);
 queue_prepend(q,n3);
 free(q);
@@ -114,6 +114,7 @@ assert(queue_delete(q,pnonexist)==-1);
 queue_prepend(q,pnonexist);//0,2,3,4
 queue_delete(q,pnonexist);
 queue_delete(q,n4);
+assert(queue_length(q)==2);
 printf("iteration %d \n",queue_iterate(q, func, n2));//should print 2,3
 
 
