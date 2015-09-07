@@ -115,29 +115,26 @@ queue_dequeue(queue_t *queue, void** item) {
 
 int
 queue_iterate(queue_t *queue, func_t f, void* item) {
-	//if queue is empty
-	if (queue->length == 0 || queue == NULL)
+	//if queue is empty or null
+	if (queue->length == 0 || queue == NULL || item == NULL)
 	{
 		return -1;
 	}
 	else
 	{
 		node* curr = queue->head;
-		while (curr != NULL)
-		//int i=1;
-		//for(;i<queue->length;i++)
-		{
+		int i = 0;
+	    for(; i<queue->length; i++)
+	    {
 			f(curr->elem, item);
 			curr = curr->next;
-		}
-	}
-	
+	    }
+	}	
     return 0;
 }
 
 int
-queue_free (queue_t *queue) {
-    
+queue_free (queue_t *queue) {  
 	//if queue is empty or null
 	if (queue->length == 0 || queue == NULL)
 	{
@@ -146,13 +143,13 @@ queue_free (queue_t *queue) {
 	else
 	{
 		node* curr = queue->head;
-		while (curr != NULL)
-		{
+		int i = 0;
+	    for(; i<queue->length; i++)
+	    {
 			node* tempNext=curr->next;
 			free(curr);
 			curr=tempNext;
-
-		}
+	    }
 		queue->head=NULL;
 		queue->tail=NULL;
 		queue->length=0;
