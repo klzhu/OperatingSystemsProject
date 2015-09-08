@@ -143,15 +143,15 @@ queue_free (queue_t *queue) {
 	else
 	{
 		node* curr = queue->head;
+		queue->head = NULL;
 		int i = 0;
 	    for(; i<queue->length; i++)
 	    {
 			node* tempNext=curr->next;
+	    	curr->next = NULL;
 			free(curr);
 			curr=tempNext;
 	    }
-		queue->head=NULL;
-		queue->tail=NULL;
 		queue->length=0;
 		free(queue);
 		queue=NULL;
