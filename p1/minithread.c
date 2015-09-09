@@ -41,14 +41,16 @@ int idCounter=0;
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-		minithread* mt;
+		/*minithread* mt;
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
 	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
 	mt->tState=RUNNING;//??
 	mt->stackptr=stackbase;//??
 	mt->programCtr=0;//??
 	++idCounter;
-	mt->threadId=idCounter;
+	mt->threadId=idCounter;*/
+	minithread* mt= minithread_create(proc,arg);
+	minithread_start(mt);
     return mt;
 }
 
@@ -96,6 +98,7 @@ minithread_start(minithread_t *t) {
 	else
 	{
 		t->tState = RUNNABLE;
+		//put thread on running queue!
 	}
 }
 
