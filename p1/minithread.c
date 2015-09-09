@@ -12,7 +12,7 @@
 #include "minithread.h"
 #include "queue.h"
 #include "synch.h"
-
+#include "machineprimitives.h"
 #include <assert.h>
 
 /*
@@ -23,12 +23,14 @@
  * that you feel they must have.
  */
 
-typedef enum {START, RUNNABLE, RUNNING, WAITING, DONE} threadState;
+typedef enum {NEW, RUNNABLE, RUNNING, WAITING, DONE} threadState;
+int idCounter=0;
 
  typedef struct minithread{
  	int threadId;
  	void* stackptr;
- 	void* stackbase;
+ 	stack_pointer_t* stackbase;
+ 	stack_pointer_t* stacktop;
  	void* programCtr;
  	queue_t* queue;
  	threadState tState;
@@ -39,12 +41,31 @@ typedef enum {START, RUNNABLE, RUNNING, WAITING, DONE} threadState;
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-    return NULL;
+		minithread* mt;
+	minithread_allocate_stack(mt->stackbase, mt->stacktop);
+	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
+	mt->tState=RUNNING;//??
+	mt->stackptr=stackbase;//??
+	mt->programCtr=0;//??
+	++idCounter;
+	mt->threadId=idCounter;
+    return mt;
 }
 
+void cleanup(minithread* md){
+	while(true==true){}
+}
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
-    return NULL;
+	minithread* mt;
+	minithread_allocate_stack(mt->stackbase, mt->stacktop);
+	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
+	mt->tState=NEW;
+	mt->stackptr=stackbase;//??
+	mt->programCtr=0;//??
+	++idCounter;
+	mt->threadId=idCounter;
+	return mt;
 }
 
 minithread_t*
