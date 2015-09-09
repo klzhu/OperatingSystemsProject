@@ -23,6 +23,17 @@
  * that you feel they must have.
  */
 
+typedef enum {START, RUNNABLE, RUNNING, WAITING, DONE} threadState;
+
+ typedef struct minithread{
+ 	int threadId;
+ 	void* stackptr;
+ 	void* stackbase;
+ 	void* programCtr;
+ 	queue_t* queue;
+ 	threadState tState;
+ }minithread;
+
 
 /* minithread functions */
 
@@ -38,12 +49,17 @@ minithread_create(proc_t proc, arg_t arg) {
 
 minithread_t*
 minithread_self() {
-    return NULL;
+	return NULL;
 }
 
 int
 minithread_id() {
-    return 0;
+	/*if (minithread_t == NULL)
+	{
+		return -1;
+	}
+	return minithread_t->threadId;*/
+	return -1;
 }
 
 void
@@ -52,6 +68,14 @@ minithread_stop() {
 
 void
 minithread_start(minithread_t *t) {
+	if (t == NULL)
+	{
+		return;
+	}
+	else
+	{
+		t->tState = RUNNABLE;
+	}
 }
 
 void
