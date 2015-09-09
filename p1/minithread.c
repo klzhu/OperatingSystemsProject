@@ -63,7 +63,7 @@ minithread_create(proc_t proc, arg_t arg) {
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
 	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
 	mt->tState=NEW;
-	mt->stackptr=stackbase;//??
+	mt->stackptr=stacktop;//??
 	mt->programCtr=0;//??
 	++idCounter;
 	mt->threadId=idCounter;
