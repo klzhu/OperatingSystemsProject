@@ -36,6 +36,9 @@ int idCounter=0;
  	threadState tState;
  }minithread;
 
+ queue_t* ready;
+ queue_t* running;
+
 
 /* minithread functions */
 
@@ -104,10 +107,20 @@ minithread_start(minithread_t *t) {
 
 void
 minithread_yield() {
+	//use minithread_switch
+	//append old thread to ready queue
+
 }
 
 void
 minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
+	/*Starts up the system, and initializes global datastructures
+Creates a thread to run mainproc(mainarg)
+This should be where all queues, global semaphores, etc.
+are initialized.*/
+ ready=queue_new();
+ running=queue_new();//??
+ minithread* mainThread=minithread_fork(mainproc,mainarg);
 }
 
 
