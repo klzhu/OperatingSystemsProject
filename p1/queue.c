@@ -123,8 +123,7 @@ queue_iterate(queue_t *queue, func_t f, void* item) {
 	else
 	{
 		node* curr = queue->head;
-		int i = 0;
-	    for(; i<queue->length; i++)
+		while(curr!=NULL)
 	    {
 			f(curr->elem, item);
 			curr = curr->next;
@@ -178,7 +177,7 @@ queue_length(const queue_t *queue) {
 int
 queue_delete(queue_t *queue, void* item) {
 	//if queue is empty
-	if (queue->length == 0 || queue == NULL || item == NULL)
+	/*if (queue->length == 0 || queue == NULL || item == NULL)
 	{
 		return -1;
 	}
@@ -190,6 +189,7 @@ queue_delete(queue_t *queue, void* item) {
 		{
 			free(queue->head);
 			queue->head = NULL;
+			queue->length--;
 			return 0;
 		}
 	}
@@ -208,8 +208,7 @@ queue_delete(queue_t *queue, void* item) {
 		{
 			node* prev=queue->head;
 	        node* curr=prev;
-	        int i = 0;
-		    for(; i<queue->length; i++)
+	        while(curr!=NULL)
 		    {
 		    	curr = curr->next;
 		    	if (curr->elem == item)
@@ -223,5 +222,50 @@ queue_delete(queue_t *queue, void* item) {
 	    	}
       	}
   	}
-return -1;
+return -1;*/
+  	//if queue is empty
+	if (queue->length == 0)
+	{
+		return -1;
+	}
+	//else{
+	/*//only 1 item in our queue
+	else if (queue->length == 1)
+	{
+		//if our head contains item
+		if (queue->head->elem == item);
+	}*/
+
+	//else if (queue->length == 1)
+	//{
+		//if our head contains the item
+		if(queue->head->elem==item){
+			//if (queue->length == 1) //only 1 item in our queue
+        	node* next=queue->head->next;
+            free(queue->head);
+            queue->head=next;
+            queue->length--;
+			return 0;
+	}
+	else{
+		node* prev=queue->head;
+        node* n=queue->head->next;
+        //int i=1;
+	    //for(;i<=queue->length;i++)
+	    while(n!=NULL)
+	    {
+		    if(n->elem==item){
+                node* newnext=n->next;
+                free(n);
+                n=NULL;
+                prev->next=newnext;
+                queue->length--;
+			    return 0;
+		    }
+		    prev=n;
+		    n=n->next;
+	    }
+      }
+	//}
+	    return -1;
 }
