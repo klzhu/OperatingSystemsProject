@@ -24,16 +24,14 @@
  */
 
 //Global Variables
-queue_t* waitingQueue;//is this the "ready" queue???
-queue_t* runnableQueue; //or this????
-int threadIdCounter; //counter for creating unique threadIds
+queue_t* g_waitingQueue;//global queue for waiting threads (for interrupts, etc)
+queue_t* g_runnableQueue; //global queue for threads waiting to run, head of queue is currently running thread
+int g_threadIdCounter = 0; //counter for creating unique threadIds
 
  typedef struct minithread{
  	int threadId;
  	stack_pointer_t* stackbase;
  	stack_pointer_t* stacktop;
- 	void* programCtr;
- 	queue_t* queue;
  	bool runnable;
  }minithread;
 
@@ -43,58 +41,55 @@ int threadIdCounter; //counter for creating unique threadIds
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-		/*minithread* mt;
-	minithread_allocate_stack(mt->stackbase, mt->stacktop);
-	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
-	mt->tState=RUNNING;//??
-	mt->stackptr=stackbase;//??
-	mt->programCtr=0;//??
-	++idCounter;
-	mt->threadId=idCounter;*/
+	if (proc == NULL || arg == NULL) return NULL;
+
 	minithread_t* mt = minithread_create(proc,arg);
 	mt->runnable = true;
-	queue_append(runnableQueue, mt);
+	queue_append(g_runnableQueue, mt);
     return mt;
 }
 
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
-	minithread_t* mt;
+	if (proc == NULL || arg == NULL) return NULL;
 
-proc_t cleanup;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
+	minithread_t* mt = malloc(sizeof(minithread_t));
+	if (mt == NULL) return NULL;
+
+	proc_t cleanup = NULL;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
 	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, arg);
 	mt->runnable = false;
 	mt->threadId=threadIdCounter++;
-	queue_append(waitingQueue, mt);//??
+	queue_append(g_runnableQueue, mt);//add to runnable queue, but it's bool to run is set to false
 	return mt;
 }
 
 minithread_t*
 minithread_self() {
-	//the current running thread is at the front of the threadqueue
-	if (runnableQueue == NULL || queue_length(runnableQueue) == 0) 
-		return NULL;
-	void** tmpThread;
-	int dequeueSuccess = queue_dequeue(runnableQueue,tmpThread);
+	//the current running thread is at the front of the runnable queue
+	if (g_runnableQueue == NULL || queue_length(g_runnableQueue) == 0) return NULL;
+
+	void** currRunningThread = NULL;
+	int dequeueSuccess = queue_dequeue(g_runnableQueue, currRunningThread);
+	
 	if (dequeueSuccess == -1) return NULL;
-	else
-	return *tmpThread;
+
+	return *currRunningThread;
 }
 
 int
 minithread_id() {
 	//the current running thread is at the front of the threadqueue
-		if (runnableQueue == NULL || queue_length(runnableQueue) == 0)
-	{
-		return -1;
-	}
+	if (g_runnableQueue == NULL || queue_length(g_runnableQueue) == 0) return -1;
 
-	void** tmpThread;
-	int dequeueSuccess = queue_dequeue(runnableQueue,tmpThread);
+	void** dequeuedNode = NULL;
+	int dequeueSuccess = queue_dequeue(g_runnableQueue, dequeuedNode);
+	
 	if (dequeueSuccess == -1) return -1;
-	else
-	return (*(*tmpThread))->threadId;
+
+	minithread* currRunningThread = *((minithread**)dequeuedNode);
+	return currRunningThread->threadId;
 }
 
 void
@@ -103,14 +98,9 @@ minithread_stop() {
 
 void
 minithread_start(minithread_t *t) {
-	if (t == NULL)
-	{
-		return;
-	}
-	else
-	{
-		t->runnable = true;
-	}
+	if (t == NULL) return NULL;
+	
+	t->runnable = true;
 }
 
 void
@@ -120,15 +110,14 @@ minithread_yield() {
 	//save the current running thread struct
 	/*Forces the caller to relinquish the processor and be put to the end of
  *  the ready queue.  Allows another thread to run.*///---ready queue= waiting or running??...probably waiting...
-	if (runnableQueue == NULL || queue_length(runnableQueue)== 0) return;
+	if (g_runnableQueue == NULL || queue_length(g_runnableQueue)== 0) return NULL;
 
-	void** tmpThread;// = threadQueue->head; //store the currently executing thread
-	int dequeueSuccess = queue_dequeue(runnableQueue,tmpThread);
-	if (dequeueSuccess == -1) return;
-	else
-	{
-		queue_append(runnableQueue, tmpThread);
-	}
+	void** yieldingThread = NULL;// = threadQueue->head; //store the currently executing thread
+	int dequeueSuccess = queue_dequeue(g_runnableQueue, yieldingThread);
+
+	if (dequeueSuccess == -1) return NULL;
+
+	queue_append(g_runnableQueue, yieldingThread);
 }
 
 void
@@ -137,8 +126,8 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 Creates a thread to run mainproc(mainarg)
 This should be where all queues, global semaphores, etc.
 are initialized.*/
-runnableQueue=queue_new();
-threadIdCounter=0;
+g_runnableQueue=queue_new();
+g_threadIdCounter = 0; //not sure if this needs to be initialized here since it's initialized above..
 minithread* mainThread=minithread_fork(mainproc,mainarg);
 }
 
