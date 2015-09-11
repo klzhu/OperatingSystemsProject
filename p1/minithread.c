@@ -14,7 +14,7 @@
 #include "synch.h"
 #include "machineprimitives.h"
 #include <assert.h>
-
+#include <stdbool.h>
 /*
  * A minithread should be defined either in this file or in a private
  * header file.  Minithreads have a stack pointer with to make procedure
@@ -50,9 +50,9 @@ minithread_fork(proc_t proc, arg_t arg) {
 	mt->programCtr=0;//??
 	++idCounter;
 	mt->threadId=idCounter;*/
-	minithread* mt = minithread_create(proc,arg);
+	minithread_t* mt = minithread_create(proc,arg);
 	mt->runnable = true;
-	append(threadQueue, mt);
+	queue_append(threadQueue, mt);
     return mt;
 }
 
@@ -61,30 +61,40 @@ void cleanup(minithread* md){
 }
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
-	minithread* mt;
+	minithread_t* mt;
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
-	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
+	//minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
 	mt->runnable = false;
-	mt->threadId=idCounter++;
-	append(threadQueue, mt);
+	mt->threadId=threadIdCounter++;
+	queue_append(threadQueue, mt);
 	return mt;
 }
 
 minithread_t*
 minithread_self() {
 	//the current running thread is at the front of the threadqueue
-	if (threadQueue == NULL || threadQueue->length == 0 || threadQueue->head == NULL) return NULL
-	return threadQueue->head;
+	if (threadQueue == NULL || queue_length(threadQueue) == 0) 
+		return NULL;
+	void** tmpThread;
+	int dequeueSuccess = queue_dequeue(threadQueue,tmpThread);
+	if (dequeueSuccess == -1) return NULL;
+	else
+	return *tmpThread;
 }
 
 int
 minithread_id() {
 	//the current running thread is at the front of the threadqueue
-	if (threadQueue == NULL || threadQueue->length == 0 || threadQueue->head == NULL)
+		if (threadQueue == NULL || queue_length(threadQueue) == 0)
 	{
 		return -1;
 	}
-	return threadQueue->head->threadId;
+
+	void** tmpThread;
+	int dequeueSuccess = queue_dequeue(threadQueue,tmpThread);
+	if (dequeueSuccess == -1) return -1;
+	else
+	return (*(*tmpThread))->threadId;
 }
 
 void
@@ -105,14 +115,14 @@ minithread_start(minithread_t *t) {
 
 void
 minithread_yield() {
-	//use minithread_switch -> i think the context switching saves the registers? Not sure on that yet how the registers are saved/restored yet.	
+	//use minithread_switch -> i think the context switching saves the registers? Not sure on that yet how the registers are saved/restored yet.--yeah, the method saves registers	
 	//move currently executing thread to end of queue
 	//save the current running thread struct
-	if (threadQueue == NULL || threadQueue->length == 0 || threadQueue->head == NULL) return void;
+	if (threadQueue == NULL || queue_length(threadQueue)== 0) return;
 
-	minithread* tmpThread = threadQueue->head; //store the currently executing thread
-	int dequeueSuccess = queue_dequeue(threadQueue);
-	if (dequeueSuccess == -1) return void;
+	void** tmpThread;// = threadQueue->head; //store the currently executing thread
+	int dequeueSuccess = queue_dequeue(threadQueue,tmpThread);
+	if (dequeueSuccess == -1) return;
 	else
 	{
 		queue_append(threadQueue, tmpThread);
