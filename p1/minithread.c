@@ -24,7 +24,8 @@
  */
 
 //Global Variables
-queue_t* threadQueue; //holds our queue of threads
+queue_t* waitingQueue;//is this the "ready" queue???
+queue_t* runnableQueue; //or this????
 int threadIdCounter; //counter for creating unique threadIds
 
  typedef struct minithread{
@@ -52,7 +53,7 @@ minithread_fork(proc_t proc, arg_t arg) {
 	mt->threadId=idCounter;*/
 	minithread_t* mt = minithread_create(proc,arg);
 	mt->runnable = true;
-	queue_append(threadQueue, mt);
+	queue_append(runnableQueue, mt);
     return mt;
 }
 
@@ -60,22 +61,22 @@ minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
 	minithread_t* mt;
 
-proc_t cleanup;
+proc_t cleanup;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
 	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, arg);
 	mt->runnable = false;
 	mt->threadId=threadIdCounter++;
-	queue_append(threadQueue, mt);
+	queue_append(waitingQueue, mt);//??
 	return mt;
 }
 
 minithread_t*
 minithread_self() {
 	//the current running thread is at the front of the threadqueue
-	if (threadQueue == NULL || queue_length(threadQueue) == 0) 
+	if (runnableQueue == NULL || queue_length(runnableQueue) == 0) 
 		return NULL;
 	void** tmpThread;
-	int dequeueSuccess = queue_dequeue(threadQueue,tmpThread);
+	int dequeueSuccess = queue_dequeue(runnableQueue,tmpThread);
 	if (dequeueSuccess == -1) return NULL;
 	else
 	return *tmpThread;
@@ -84,13 +85,13 @@ minithread_self() {
 int
 minithread_id() {
 	//the current running thread is at the front of the threadqueue
-		if (threadQueue == NULL || queue_length(threadQueue) == 0)
+		if (runnableQueue == NULL || queue_length(runnableQueue) == 0)
 	{
 		return -1;
 	}
 
 	void** tmpThread;
-	int dequeueSuccess = queue_dequeue(threadQueue,tmpThread);
+	int dequeueSuccess = queue_dequeue(runnableQueue,tmpThread);
 	if (dequeueSuccess == -1) return -1;
 	else
 	return (*(*tmpThread))->threadId;
@@ -117,14 +118,16 @@ minithread_yield() {
 	//use minithread_switch -> i think the context switching saves the registers? Not sure on that yet how the registers are saved/restored yet.--yeah, the method saves registers	
 	//move currently executing thread to end of queue
 	//save the current running thread struct
-	if (threadQueue == NULL || queue_length(threadQueue)== 0) return;
+	/*Forces the caller to relinquish the processor and be put to the end of
+ *  the ready queue.  Allows another thread to run.*///---ready queue= waiting or running??...probably waiting...
+	if (runnableQueue == NULL || queue_length(runnableQueue)== 0) return;
 
 	void** tmpThread;// = threadQueue->head; //store the currently executing thread
-	int dequeueSuccess = queue_dequeue(threadQueue,tmpThread);
+	int dequeueSuccess = queue_dequeue(runnableQueue,tmpThread);
 	if (dequeueSuccess == -1) return;
 	else
 	{
-		queue_append(threadQueue, tmpThread);
+		queue_append(runnableQueue, tmpThread);
 	}
 }
 
@@ -134,7 +137,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 Creates a thread to run mainproc(mainarg)
 This should be where all queues, global semaphores, etc.
 are initialized.*/
-threadQueue=queue_new();
+runnableQueue=queue_new();
 threadIdCounter=0;
 minithread* mainThread=minithread_fork(mainproc,mainarg);
 }
