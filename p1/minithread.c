@@ -56,14 +56,13 @@ minithread_fork(proc_t proc, arg_t arg) {
     return mt;
 }
 
-void cleanup(minithread* md){
-	while(true==true){}
-}
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
 	minithread_t* mt;
+
+proc_t cleanup;
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
-	//minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, mt);
+	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, arg);
 	mt->runnable = false;
 	mt->threadId=threadIdCounter++;
 	queue_append(threadQueue, mt);
