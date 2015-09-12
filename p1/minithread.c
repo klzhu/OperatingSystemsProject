@@ -60,7 +60,7 @@ minithread_create(proc_t proc, arg_t arg) {
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
 	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, arg);
 	mt->runnable = false;
-	mt->threadId=threadIdCounter++;
+	mt->threadId=g_threadIdCounter++;
 	queue_append(g_runnableQueue, mt);//add to runnable queue, but it's bool to run is set to false
 	return mt;
 }
@@ -128,7 +128,7 @@ This should be where all queues, global semaphores, etc.
 are initialized.*/
 g_runnableQueue=queue_new();
 g_threadIdCounter = 0; //not sure if this needs to be initialized here since it's initialized above..
-minithread* mainThread=minithread_fork(mainproc,mainarg);
+/*minithread* mainThread=minithread_fork(mainproc,mainarg);*/
 }
 
 
