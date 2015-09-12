@@ -98,7 +98,7 @@ minithread_stop() {
 
 void
 minithread_start(minithread_t *t) {
-	if (t == NULL) return NULL;
+	if (t == NULL) return;
 	
 	t->runnable = true;
 }
@@ -110,12 +110,12 @@ minithread_yield() {
 	//save the current running thread struct
 	/*Forces the caller to relinquish the processor and be put to the end of
  *  the ready queue.  Allows another thread to run.*///---ready queue= waiting or running??...probably waiting...
-	if (g_runnableQueue == NULL || queue_length(g_runnableQueue)== 0) return NULL;
+	if (g_runnableQueue == NULL || queue_length(g_runnableQueue)== 0) return;
 
 	void** yieldingThread = NULL;// = threadQueue->head; //store the currently executing thread
 	int dequeueSuccess = queue_dequeue(g_runnableQueue, yieldingThread);
 
-	if (dequeueSuccess == -1) return NULL;
+	if (dequeueSuccess == -1) return;
 
 	queue_append(g_runnableQueue, yieldingThread);
 }
