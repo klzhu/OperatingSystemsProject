@@ -61,7 +61,7 @@ assert(queue_length(q)==4);
 printf("iteration %d \n",queue_iterate(q, func, n6));//shud b 6,4,2,5
 //test iterate, and free
 free(q);
-printf("iteration %d \n",queue_iterate(q, func, n6));//shud b 0 elements
+//printf("iteration %d \n",queue_iterate(q, func, n6));//shud b 0 elements
  }
 
 
@@ -225,7 +225,7 @@ assert( queue_dequeue(q,dptr)==0);
 j=*((int*) d);
 assert(j==2);
 assert(queue_dequeue(q,dptr)==-1);
-assert(queue_iterate(q, func, n3)==-1);
+//assert(queue_iterate(q, func, n3)==-1); no longer returning -1 if queue is empty now, since technically it isn't an error
 assert(queue_delete(q,n3)==-1);
 free(q);
 q=queue_new();
