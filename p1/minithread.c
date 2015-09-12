@@ -149,9 +149,9 @@ g_threadIdCounter = 0; //not sure if this needs to be initialized here since it'
 minithread_t* mainThread;//=minithread_create(mainproc,mainarg);
 mainThread=minithread_fork(mainproc,mainarg);
 proc_t prc=*mainThread->prc;
-arg_t ar=*mainThread->ar;
-prc(ar);
-//mainproc(mainarg);
+//arg_t ar=*mainThread->ar;
+//prc(ar); this segfaults :'(   how to get thread to execute the proc on its stack???
+mainproc(mainarg);
 }
 
 
