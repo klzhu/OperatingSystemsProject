@@ -26,16 +26,17 @@
  */
 
 //Global Variables
-minithread* g_runningThread; //global variable that tracks the running thread
-queue_t* g_nonRunnableQueue; //global queue for threads not scheduled to run
-queue_t* g_runnableQueue; //global queue for threads waiting to run, head of queue is currently running thread
+minithread_t* g_runningThread = NULL; //global variable that tracks the running thread
+minithread_t* g_idleThread = NULL;
+queue_t* g_nonRunnableQueue = NULL; //global queue for threads not scheduled to run
+queue_t* g_runnableQueue = NULL; //global queue for threads waiting to run, head of queue is currently running thread
 int g_threadIdCounter = 0; //counter for creating unique threadIds
-semaphore_t* g_lock; //global lock
+semaphore_t* g_lock = NULL; //global lock
 
  typedef struct minithread{
  	int threadId;
- 	stack_pointer_t* stackbase;
- 	stack_pointer_t* stacktop;
+ 	stack_pointer_t stackbase;
+ 	stack_pointer_t stacktop;
  	proc_t* prc;//NOT SURE KEEP HERE OR CAN JUST CALL IN FORK METHOD?PIAZZA SAYS FORK ONLY SETS TO RUNNABLE
  	arg_t* ar;
  }minithread;
@@ -44,33 +45,41 @@ semaphore_t* g_lock; //global lock
 
 /* minithread functions */
 
-minithread_t*
-minithread_fork(proc_t proc, arg_t arg) {
-	if (proc == NULL || arg == NULL) return NULL;
-
-	minithread_t* mt = minithread_create(proc,arg);
-	queue_append(g_runnableQueue, mt);
-	//proc(arg);
-    return mt;
-}
-
-int cleanup(arg_t arg){ //need to finish implementing cleanup method
+ int cleanup(arg_t arg){ //need to finish implementing cleanup method
 	return -1;
 }
+
+int dummyarg = 1;
+
+
+
 minithread_t*
-minithread_create(proc_t proc, arg_t arg) {
+minithread_fork(proc_t proc, arg_t arg) {
 	if (proc == NULL || arg == NULL) return NULL;
 
 	minithread_t* mt = malloc(sizeof(minithread_t));
 	if (mt == NULL) return NULL;
 
-	//proc_t cleanup = NULL;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
-	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, arg);
+	minithread_initialize_stack(mt->stacktop, proc, arg, cleanup, arg);
+
+	if (queue_length(g_runnableQueue) != 0) queue_append(g_runnableQueue, mt);
+	//proc(arg);
+    return mt;
+}
+
+minithread_t*
+minithread_create(proc_t proc, arg_t arg) {
+	if (proc == NULL) return NULL;
+
+	minithread_t* mt = malloc(sizeof(minithread_t));
+	if (mt == NULL) return NULL;
+
+	//proc_t cleanup = NULL;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
+	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
+	minithread_initialize_stack(&(mt->stacktop),proc, arg, cleanup, &dummyarg);
 	mt->threadId=g_threadIdCounter++;
-	mt->prc=&proc;
-	mt->ar=&arg;
-	queue_append(g_nonRunnableQueue, mt);//add to non runnable queue, which holds threads not scheduled to run
+	//queue_append(g_nonRunnableQueue, mt);//add to non runnable queue, which holds threads not scheduled to run
 	return mt;
 }
 
@@ -89,21 +98,25 @@ minithread_self() {
 
 int
 minithread_id() {
+	/*
 	//the current running thread is pointed to by g_runningThread
 	if (g_runningThread == NULL) return -1;
 
 	return g_runningThread->threadId;
+	*/
+	return 1;
 }
 
 void
 minithread_stop() {
+	/*
 	if (g_runningThread == NULL)
 	{
 		assert(false);
 		return;
 	}
 
-	minithread_t** runningThreadPtr = g_runningThread;
+	void** runningThreadPtr = g_runningThread;
 	queue_append(g_nonRunnableQueue, g_runningThread);
 	int dequeueSuccess = queue_dequeue(g_runnableQueue, runningThreadPtr);
 
@@ -112,6 +125,9 @@ minithread_stop() {
 		assert(false);
 		return;
 	}
+
+	//finish else
+	*/
 }
 
 void
@@ -154,6 +170,8 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	This should be where all queues, global semaphores, etc.
 	are initialized.*/
 	
+	printf("hello1\n");
+
 	//initialize global variables
 	g_nonRunnableQueue =queue_new();
 	g_runnableQueue=queue_new();
@@ -165,18 +183,37 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	{
 		//there is probably better code to fail gracefully and let the user know why the program failed, so this should be replaced eventually
 		assert(false);
-		return 0;
+		return;
 	}
 
-	semaphore_initialize(g_lock, 1);
+	//semaphore_initialize(g_lock, 1);
 
-	minithread_t* mainThread;//=minithread_create(mainproc,mainarg);
+	//set idle thread
+	/*
+	g_idleThread = malloc(sizeof(minithread_t));
+	g_idleThread->stackbase = NULL;
+	g_idleThread->stacktop = NULL;
+	g_idleThread->threadId = g_threadIdCounter++;
+		printf("hello2\n");
+	*/
+
+	stack_pointer_t* kThreadStackPtr = NULL;
+
+	//running thread
+	//g_runningThread = malloc(sizeof(minithread_t));
+	g_runningThread = minithread_create(mainproc, mainarg);
+
+	printf("hello3\n");
+
+	minithread_switch(kThreadStackPtr, &(g_runningThread->stacktop));
+
+	/*
 	mainThread=minithread_fork(mainproc,mainarg);
 	minithread_root();
 	proc_t prc=*mainThread->prc;
 	//arg_t ar=*mainThread->ar;
 	//prc(ar); this segfaults :'(   how to get thread to execute the proc on its stack???
-	mainproc(mainarg);
+	mainproc(mainarg);*/
 }
 
 
