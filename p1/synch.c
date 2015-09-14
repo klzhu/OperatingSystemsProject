@@ -53,6 +53,7 @@ void semaphore_initialize(semaphore_t *sem, int cnt) {
 	if (sem == NULL || cnt == NULL) return;
 
 	sem->count = cnt;
+	assert(sem->count == cnt);
 }
 
 void semaphore_P(semaphore_t *sem) {
@@ -76,7 +77,9 @@ void semaphore_V(semaphore_t *sem) {
 	if (queue_length(sem->semaWaitQ) == 0) sem->count++;
 	else
 	{
-		//in class, the professor said we should assert that sem->count == 0 here, not sure why
+		//if the semaphore wait queue is not empty, then there are threads waiting and the count must be at 0
+		assert(sem->count == 0);
+
 		minithread_t** t = NULL;
 		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, t);
 

@@ -13,8 +13,10 @@
 #include "queue.h"
 #include "synch.h"
 #include "machineprimitives.h"
+#include "defs.h"
 #include <assert.h>
 #include <stdbool.h>
+
 /*
  * A minithread should be defined either in this file or in a private
  * header file.  Minithreads have a stack pointer with to make procedure
@@ -24,9 +26,11 @@
  */
 
 //Global Variables
-queue_t* g_waitingQueue;//global queue for waiting threads (for interrupts, etc)
+minithread* g_runningThread; //global variable that tracks the running thread
+queue_t* g_nonRunnableQueue; //global queue for threads not scheduled to run
 queue_t* g_runnableQueue; //global queue for threads waiting to run, head of queue is currently running thread
 int g_threadIdCounter = 0; //counter for creating unique threadIds
+semaphore_t* g_lock; //global lock
 
  typedef struct minithread{
  	int threadId;
@@ -34,7 +38,6 @@ int g_threadIdCounter = 0; //counter for creating unique threadIds
  	stack_pointer_t* stacktop;
  	proc_t* prc;//NOT SURE KEEP HERE OR CAN JUST CALL IN FORK METHOD?PIAZZA SAYS FORK ONLY SETS TO RUNNABLE
  	arg_t* ar;
- 	bool runnable;
  }minithread;
 
 
@@ -46,13 +49,12 @@ minithread_fork(proc_t proc, arg_t arg) {
 	if (proc == NULL || arg == NULL) return NULL;
 
 	minithread_t* mt = minithread_create(proc,arg);
-	mt->runnable = true;
 	queue_append(g_runnableQueue, mt);
 	//proc(arg);
     return mt;
 }
 
-int cleanup(arg_t arg){
+int cleanup(arg_t arg){ //need to finish implementing cleanup method
 	return -1;
 }
 minithread_t*
@@ -65,11 +67,10 @@ minithread_create(proc_t proc, arg_t arg) {
 	//proc_t cleanup = NULL;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
 	minithread_allocate_stack(mt->stackbase, mt->stacktop);
 	minithread_initialize_stack(mt->stacktop,proc, arg, cleanup, arg);
-	mt->runnable = false;
 	mt->threadId=g_threadIdCounter++;
 	mt->prc=&proc;
 	mt->ar=&arg;
-	queue_append(g_runnableQueue, mt);//add to runnable queue, but it's bool to run is set to false-- SHUD WE ADD TO RUNNABLE Q IF NOT RUNNABLE?
+	queue_append(g_nonRunnableQueue, mt);//add to non runnable queue, which holds threads not scheduled to run
 	return mt;
 }
 
@@ -88,29 +89,38 @@ minithread_self() {
 
 int
 minithread_id() {
-	//the current running thread is at the front of the threadqueue
-	if (g_runnableQueue == NULL || queue_length(g_runnableQueue) == 0) return -1;
+	//the current running thread is pointed to by g_runningThread
+	if (g_runningThread == NULL) return -1;
 
-	void** dequeuedNode = NULL;
-	int dequeueSuccess = queue_dequeue(g_runnableQueue, dequeuedNode);
-	
-	if (dequeueSuccess == -1) return -1;
-
-	minithread* currRunningThread = *((minithread**)dequeuedNode);
-	return currRunningThread->threadId;
+	return g_runningThread->threadId;
 }
 
 void
 minithread_stop() {
+	if (g_runningThread == NULL)
+	{
+		assert(false);
+		return;
+	}
+
+	minithread_t** runningThreadPtr = g_runningThread;
+	queue_append(g_nonRunnableQueue, g_runningThread);
+	int dequeueSuccess = queue_dequeue(g_runnableQueue, runningThreadPtr);
+
+	if (dequeueSuccess == -1)
+	{
+		assert(false);
+		return;
+	}
 }
 
 void
 minithread_start(minithread_t *t) {
+	//TO DO: Should use AbortOnCondition and AbortOnError to handle failing gracefully
 	if (t == NULL) return;
-	
-	t->runnable = true;
-	//call proc(arg)???
-	//t->proc(t->arg);
+	assert(t != NULL);
+
+	queue_append(g_runnableQueue, t);
 }
 
 void
@@ -140,18 +150,33 @@ minithread_yield() {
 void
 minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	/*Starts up the system, and initializes global datastructures
-Creates a thread to run mainproc(mainarg)
-This should be where all queues, global semaphores, etc.
-are initialized.*/
-g_waitingQueue=queue_new();
-g_runnableQueue=queue_new();
-g_threadIdCounter = 0; //not sure if this needs to be initialized here since it's initialized above..
-minithread_t* mainThread;//=minithread_create(mainproc,mainarg);
-mainThread=minithread_fork(mainproc,mainarg);
-proc_t prc=*mainThread->prc;
-//arg_t ar=*mainThread->ar;
-//prc(ar); this segfaults :'(   how to get thread to execute the proc on its stack???
-mainproc(mainarg);
+	Creates a thread to run mainproc(mainarg)
+	This should be where all queues, global semaphores, etc.
+	are initialized.*/
+	
+	//initialize global variables
+	g_nonRunnableQueue =queue_new();
+	g_runnableQueue=queue_new();
+	g_threadIdCounter = 0;
+	g_lock = semaphore_create();
+
+	//need to check that our queues and lock were created correctly
+	if (g_nonRunnableQueue == NULL || g_runnableQueue == NULL || g_lock == NULL)
+	{
+		//there is probably better code to fail gracefully and let the user know why the program failed, so this should be replaced eventually
+		assert(false);
+		return 0;
+	}
+
+	semaphore_initialize(g_lock, 1);
+
+	minithread_t* mainThread;//=minithread_create(mainproc,mainarg);
+	mainThread=minithread_fork(mainproc,mainarg);
+	minithread_root();
+	proc_t prc=*mainThread->prc;
+	//arg_t ar=*mainThread->ar;
+	//prc(ar); this segfaults :'(   how to get thread to execute the proc on its stack???
+	mainproc(mainarg);
 }
 
 
