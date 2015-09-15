@@ -49,8 +49,8 @@ void semaphore_destroy(semaphore_t *sem) {
 
 void semaphore_initialize(semaphore_t *sem, int cnt) {
 	assert(sem != NULL);
-	assert(cnt != NULL);
-	if (sem == NULL || cnt == NULL) return;
+	assert(cnt >=0);
+	if (sem == NULL || cnt <0) return;
 
 	sem->count = cnt;
 	assert(sem->count == cnt);
@@ -81,7 +81,7 @@ void semaphore_V(semaphore_t *sem) {
 		assert(sem->count == 0);
 
 		minithread_t** t = NULL;
-		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, t);
+		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, (void**)t);
 
 		assert(t != NULL);
 		if (dequeueSuccess == -1) return;
