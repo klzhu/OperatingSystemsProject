@@ -80,12 +80,12 @@ void semaphore_V(semaphore_t *sem) {
 		//if the semaphore wait queue is not empty, then there are threads waiting and the count must be at 0
 		assert(sem->count == 0);
 
-		minithread_t** t = NULL;
-		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, (void**)t);
+		minithread_t* t = NULL;
+		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, (void**) &t);
 
 		assert(t != NULL);
 		if (dequeueSuccess == -1) return;
 		
-		minithread_start(*t);
+		minithread_start(t);
 	}
 }

@@ -56,7 +56,19 @@ semaphore_t* g_lock = NULL; //global lock
 
 }
 
-//int dummyarg = 1;
+ int reaperThreadMethod(arg_t arg) {
+	 while (g_zombieQueue != 0)
+	 {	 
+		 minithread_t* threadToClean = NULL;
+		 int dequeueSuccess = queue_dequeue(g_zombieQueue, (void**)&threadToClean);
+		 if (dequeueSuccess == -1) return -1;
+		 assert(threadToClean != NULL && threadToClean->stackbase != NULL);
+
+		 minithread_free_stack(threadToClean->stackbase);
+		 free(threadToClean);
+	 }
+	 return 0;
+ }
 
 int idleThreadMethod(arg_t arg){
 	while(1)
@@ -178,7 +190,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_zombieQueue=queue_new();
 	g_threadIdCounter = 0;
 	g_lock = semaphore_create();
-	g_reaperThread = minithread_create(cleanup, NULL);
+	g_reaperThread = minithread_create(reaperThreadMethod, NULL);
 	g_idleThread = minithread_create(idleThreadMethod, NULL);
 	g_runningThread = minithread_create(mainproc, mainarg);
 
