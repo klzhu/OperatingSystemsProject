@@ -19,7 +19,7 @@
 struct semaphore {
 	int lock;
 	int count;
-	queue_t* semaWaitQ;
+	queue_t* semaWaitQ; //sema waiting queue
 };
 
 
@@ -27,53 +27,86 @@ semaphore_t* semaphore_create() {
 	semaphore_t *s = malloc(sizeof(semaphore_t));
 	if (s == NULL) return NULL;
 
-	s->count = 0;
-	s->lock = 0; //signifies lock is released
+	s->count = -1; //set to invalid value to ensure semaphore_initialize() called before using semaphore
+	s->lock = 0; //set to unlocked
 	s->semaWaitQ = queue_new();
 
-	if (s->semaWaitQ == NULL) return NULL;
+	if (s->semaWaitQ == NULL)
+	{
+		free(s); //free memory just allocated
+		return NULL;
+	}
 
 	return s;
 }
 
 void semaphore_destroy(semaphore_t *sem) {
-	assert(sem != NULL);
-	assert(sem->semaWaitQ != NULL);
 	if (sem == NULL) return;
 
-	int freeQueueSuccess = queue_free(sem->semaWaitQ);
-	if (freeQueueSuccess == -1) return;
+	//use atomic_test_and_set to ensure atomic operation
+	while (atomic_test_and_set(&sem->lock)); //do nothing if locked
 
-	free(sem);
+	//critical section
+	assert(sem->semaWaitQ != NULL); //sanity check
+	int freeQueueSuccess = queue_free(sem->semaWaitQ); //release waiting queue
+	if (freeQueueSuccess == -1) //if freeing operation failed
+	{
+		sem->lock = 0; //free lock
+		return;
+	}
+	free(sem); //release semaphore
+	sem->lock = 0; //release lock
 }
 
 void semaphore_initialize(semaphore_t *sem, int cnt) {
-	assert(sem != NULL);
-	assert(cnt >=0);
-	if (sem == NULL || cnt <0) return;
+	//Validate input arguments, abort if invalid argument is seen
+	AbortOnCondition(sem != NULL, "Null argument sem in semaphore_initialize()");
+	AbortOnCondition(cnt < 0, "Invalid argument cnt seen in semaphore_initialize()");
 
+	//use atomic_test_and_set to ensure atomic operation
+	while (atomic_test_and_set(&sem->lock)); //do nothing if locked
+
+	//critical section
 	sem->count = cnt;
+	assert(sem->semaWaitQ != NULL); //sanity checks
 	assert(sem->count == cnt);
+
+	sem->lock = 0; //release lock
 }
 
 void semaphore_P(semaphore_t *sem) {
-	assert(sem != NULL);
-	assert(sem->semaWaitQ != NULL);
-	if (sem == NULL || sem->semaWaitQ == NULL) return;
+	AbortOnCondition(sem != NULL, "Null argument sem in semaphore_P()"); //validate argument
+	AbortOnCondition(sem->count >= 0, "Semaphore has not been initialized"); //ensure semaphore count has been initialized 
 
+	assert(sem->semaWaitQ != NULL); //sanity check
+
+	//use atomic_test_and_set to ensure atomic operation
+	while (atomic_test_and_set(&sem->lock)); //do nothing if locked	
+
+	//critical section
 	if (sem->count > 0) sem->count--;
 	else
 	{
-		queue_append(sem->semaWaitQ, minithread_self);
-		minithread_stop(); //should this be a thread yield or a thread stop?
+		minithread_t* currThread = minithread_self(); //get TCB of calling thread
+		AbortOnCondition(currThread != NULL, "Failed in minithread_self() method in semaphore_P()");
+
+		queue_append(sem->semaWaitQ, minithread_self); //put thread onto semaphore's wait queue
+		minithread_stop(); //block calling thread, yield processor
 	}
+
+	sem->lock = 0; //release lock
 }
 
 void semaphore_V(semaphore_t *sem) {
-	assert(sem != NULL);
-	assert(sem->semaWaitQ != NULL);
-	if (sem == NULL || sem->semaWaitQ == NULL) return;
+	AbortOnCondition(sem != NULL, "Null argument sem in semaphore_P()"); //validate argument
+	AbortOnCondition(sem->count >= 0, "Semaphore has not been initialized"); //ensure semaphore count has been initialized 
 
+	assert(sem->semaWaitQ != NULL);
+
+	//use atomic_test_and_set to ensure atomic operation
+	while (atomic_test_and_set(&sem->lock)); //do nothing if locked	
+
+	//critical section
 	if (queue_length(sem->semaWaitQ) == 0) sem->count++;
 	else
 	{
@@ -82,10 +115,10 @@ void semaphore_V(semaphore_t *sem) {
 
 		minithread_t* t = NULL;
 		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, (void**) &t);
-
 		assert(t != NULL);
-		if (dequeueSuccess == -1) return;
+		AbortOnCondition(dequeueSuccess == 0, "Failed in queue_dequeue operation in semaphore_V()");
 		
 		minithread_start(t);
 	}
+	sem->lock = 0; //release lock
 }
