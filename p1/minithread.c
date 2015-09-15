@@ -136,24 +136,25 @@ minithread_start(minithread_t *t) {
 void
 minithread_yield() {	
 	/*Forces the caller to relinquish the processor and be put to the end of
- *  the ready queue.  Allows another thread to run.*///---ready queue= waiting or running??...probably waiting...
-	/* anothrer thread to run--which thread??...i guess for now dequeue  runnining thread and put it at end or queue and make the new queue head be running..
-	so for now this method is fine*/
+    the ready queue.  Allows another thread to run. */
 	if (g_runnableQueue == NULL) return;
 	 
-	//if (queue_length(g_runnableQueue) == 0) minithread_switch();
+	if (queue_length(g_runnableQueue) == 0) //if no threads waiting to run, idle thread runs
+	{
+		minithread_switch(&(g_runningThread->stacktop), &(g_idleThread->stacktop));
+		g_runningThread = g_idleThread;
+	}
+	else
+	{
+		minithread_t* dequeuedThread = NULL;
+		int dequeueSuccess = queue_dequeue(g_runnableQueue, (void**) &dequeuedThread); //cast dequeuedThread to a void pointer
+		if (dequeueSuccess == -1 || dequeuedThread == NULL || dequeuedThread->stacktop == NULL) return;
 
-	void** yieldingThread = NULL;// = threadQueue->head; //store the currently executing thread
-	int dequeueSuccess = queue_dequeue(g_runnableQueue, yieldingThread);
 
-	if (dequeueSuccess == -1) return;
-	queue_append(g_runnableQueue, yieldingThread);
-
-	void** nextThread = NULL;// to be new head
-    dequeueSuccess = queue_dequeue(g_runnableQueue, nextThread);
-    if(dequeueSuccess ==-1)return;//MAYBE BETTER WAY TO INDICATE FAILURE?
-	minithread_switch(((minithread_t*)(*yieldingThread))->stackbase, ((minithread_t*)(*nextThread))->stackbase);//BASE OR TOP??? IS TYPE CASTING FROM VOID* OK??
-	queue_prepend(g_runnableQueue, nextThread);
+		queue_append(g_runnableQueue, g_runningThread); //puts yielding thread back onto queue
+		minithread_switch(&(g_runningThread->stacktop), &(dequeuedThread->stacktop)); //context switch to the dequeued thread, which is the next thread scheduled to run
+		g_runningThread = dequeuedThread; //point the global running thread pointer to the new running thread
+	}
 }
 
 void
