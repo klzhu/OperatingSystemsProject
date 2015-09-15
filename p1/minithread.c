@@ -72,14 +72,10 @@ minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
 	if (proc == NULL) return NULL;
 
-	minithread_t* mt = malloc(sizeof(minithread_t));
+	minithread_t* mt = minithread_create(proc, arg);
 	if (mt == NULL) return NULL;
 
-	minithread_allocate_stack(mt->stackbase, mt->stacktop);
-	minithread_initialize_stack(mt->stacktop, proc, arg, cleanup, arg);
-
-	if (queue_length(g_runnableQueue) != 0) queue_append(g_runnableQueue, mt);
-	//proc(arg);
+	queue_append(g_runnableQueue, mt); //schedule thread to run
     return mt;
 }
 
@@ -90,7 +86,6 @@ minithread_create(proc_t proc, arg_t arg) {
 	minithread_t* mt = malloc(sizeof(minithread_t));
 	if (mt == NULL) return NULL;
 
-	//proc_t cleanup = NULL;//cleanup code should wake up reaper thread to free stack and tcb. then context switch to next runnable thread?
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
 	minithread_initialize_stack(&(mt->stacktop),proc, arg, cleanup, NULL);//&dummyarg);
 	mt->threadId=g_threadIdCounter++;
@@ -100,26 +95,18 @@ minithread_create(proc_t proc, arg_t arg) {
 
 minithread_t*
 minithread_self() {
-	//the current running thread is at the front of the runnable queue
-	if (g_runnableQueue == NULL || queue_length(g_runnableQueue) == 0) return NULL;
+	//if there is no runnin thread currently
+	if (g_runningThread == NULL) return NULL;
 
-	void** currRunningThread = NULL;
-	int dequeueSuccess = queue_dequeue(g_runnableQueue, currRunningThread);
-	
-	if (dequeueSuccess == -1) return NULL;
-
-	return *currRunningThread;
+	return g_runningThread;
 }
 
 int
 minithread_id() {
-	/*
 	//the current running thread is pointed to by g_runningThread
 	if (g_runningThread == NULL) return -1;
 
 	return g_runningThread->threadId;
-	*/
-	return 1;
 }
 
 void
@@ -205,7 +192,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 		return;
 	}
 
-	//semaphore_initialize(g_lock, 1);
+	semaphore_initialize(g_lock, 1);
 
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop));
 }
