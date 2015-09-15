@@ -31,6 +31,7 @@ minithread_t* g_idleThread = NULL;
 minithread_t* g_reaperThread = NULL;
 //queue_t* g_nonRunnableQueue = NULL; //global queue for threads not scheduled to run
 queue_t* g_runnableQueue = NULL; //global queue for threads waiting to run, head of queue is currently running thread
+queue_t* g_zombieQueue=NULL;//global queue for zombie threads waiting to be cleaned up
 int g_threadIdCounter = 0; //counter for creating unique threadIds
 semaphore_t* g_lock = NULL; //global lock
 
@@ -45,10 +46,17 @@ semaphore_t* g_lock = NULL; //global lock
 /* minithread functions */
 
  int cleanup(arg_t arg){ //need to finish implementing cleanup method
-	return -1;
+	minithread_t* mt=g_runningThread;//(minithread_t*)arg;
+	queue_append(g_zombieQueue,mt);
+	//final_proc should not return
+	while(1){
+       minithread_yield();
+	}
+	return 0;
+
 }
 
-int dummyarg = 1;
+//int dummyarg = 1;
 
 int idleThreadMethod(arg_t arg){
 	while(1)
@@ -79,7 +87,7 @@ minithread_create(proc_t proc, arg_t arg) {
 	if (mt == NULL) return NULL;
 
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
-	minithread_initialize_stack(&(mt->stacktop),proc, arg, cleanup, &dummyarg);
+	minithread_initialize_stack(&(mt->stacktop),proc, arg, cleanup, NULL);//&dummyarg);
 	mt->threadId=g_threadIdCounter++;
 
 	return mt;
@@ -167,6 +175,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	//initialize global variables
 	//g_nonRunnableQueue =queue_new();
 	g_runnableQueue=queue_new();
+	g_zombieQueue=queue_new();
 	g_threadIdCounter = 0;
 	g_lock = semaphore_create();
 	g_reaperThread = minithread_create(cleanup, NULL);
