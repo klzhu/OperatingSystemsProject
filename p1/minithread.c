@@ -28,8 +28,8 @@
 //Global Variables
 minithread_t* g_runningThread = NULL; //global variable that tracks the running thread
 minithread_t* g_idleThread = NULL;
-minithread_t g_reaperThread = NULL;
-queue_t* g_nonRunnableQueue = NULL; //global queue for threads not scheduled to run
+minithread_t* g_reaperThread = NULL;
+//queue_t* g_nonRunnableQueue = NULL; //global queue for threads not scheduled to run
 queue_t* g_runnableQueue = NULL; //global queue for threads waiting to run, head of queue is currently running thread
 int g_threadIdCounter = 0; //counter for creating unique threadIds
 semaphore_t* g_lock = NULL; //global lock
@@ -38,8 +38,6 @@ semaphore_t* g_lock = NULL; //global lock
  	int threadId;
  	stack_pointer_t stackbase;
  	stack_pointer_t stacktop;
- 	proc_t* prc;//NOT SURE KEEP HERE OR CAN JUST CALL IN FORK METHOD?PIAZZA SAYS FORK ONLY SETS TO RUNNABLE
- 	arg_t* ar;
  }minithread;
 
 
@@ -52,11 +50,12 @@ semaphore_t* g_lock = NULL; //global lock
 
 int dummyarg = 1;
 
-void idleThreadMethod(arg_t arg){
+int idleThreadMethod(arg_t arg){
 	while(1)
 	{
-		minithread_yield
+		minithread_yield();
 	}
+	return -1;
 }
 
 
@@ -148,15 +147,14 @@ minithread_start(minithread_t *t) {
 }
 
 void
-minithread_yield() {
-	//use minithread_switch -> i think the context switching saves the registers? Not sure on that yet how the registers are saved/restored yet.--yeah, the method saves registers	
-	//move currently executing thread to end of queue
-	//save the current running thread struct
+minithread_yield() {	
 	/*Forces the caller to relinquish the processor and be put to the end of
  *  the ready queue.  Allows another thread to run.*///---ready queue= waiting or running??...probably waiting...
 	/* anothrer thread to run--which thread??...i guess for now dequeue  runnining thread and put it at end or queue and make the new queue head be running..
 	so for now this method is fine*/
-	if (g_runnableQueue == NULL || queue_length(g_runnableQueue)== 0) return;
+	if (g_runnableQueue == NULL) return;
+	 
+	//if (queue_length(g_runnableQueue) == 0) minithread_switch();
 
 	void** yieldingThread = NULL;// = threadQueue->head; //store the currently executing thread
 	int dequeueSuccess = queue_dequeue(g_runnableQueue, yieldingThread);
@@ -179,15 +177,19 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	are initialized.*/
 
 	//initialize global variables
-	g_nonRunnableQueue =queue_new();
+	//g_nonRunnableQueue =queue_new();
 	g_runnableQueue=queue_new();
 	g_threadIdCounter = 0;
 	g_lock = semaphore_create();
-	g_reaperThread = minithread_create(cleanup, dummyarg);
-	g_idleThread = miinithread_create(idleThreadMethod, dummyarg);
+	g_reaperThread = minithread_create(cleanup, NULL);
+	g_idleThread = minithread_create(idleThreadMethod, NULL);
+	g_runningThread = minithread_create(mainproc, mainarg);
+
+	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 
 	//need to check that our queues and lock were created correctly
-	if (g_nonRunnableQueue == NULL || g_runnableQueue == NULL || g_lock == NULL)
+	if (g_runnableQueue == NULL || g_lock == NULL || g_reaperThread == NULL
+		|| g_idleThread == NULL || g_runningThread == NULL || kernelThreadStackPtr == NULL)
 	{
 		//there is probably better code to fail gracefully and let the user know why the program failed, so this should be replaced eventually
 		assert(false);
@@ -196,30 +198,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 
 	//semaphore_initialize(g_lock, 1);
 
-	//set idle thread
-	/*
-	g_idleThread = malloc(sizeof(minithread_t));
-	g_idleThread->stackbase = NULL;
-	g_idleThread->stacktop = NULL;
-	g_idleThread->threadId = g_threadIdCounter++;
-		printf("hello2\n");
-	*/
-
-	stack_pointer_t* kThreadStackPtr = malloc(sizeof(stack_pointer_t*));
-
-	//running thread
-	//g_runningThread = malloc(sizeof(minithread_t));
-	g_runningThread = minithread_create(mainproc, mainarg);
-
-	minithread_switch(kThreadStackPtr, &(g_runningThread->stacktop));
-
-	/*
-	mainThread=minithread_fork(mainproc,mainarg);
-	minithread_root();
-	proc_t prc=*mainThread->prc;
-	//arg_t ar=*mainThread->ar;
-	//prc(ar); this segfaults :'(   how to get thread to execute the proc on its stack???
-	mainproc(mainarg);*/
+	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop));
 }
 
 
