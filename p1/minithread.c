@@ -28,6 +28,7 @@
 //Global Variables
 minithread_t* g_runningThread = NULL; //global variable that tracks the running thread
 minithread_t* g_idleThread = NULL;
+minithread_t g_reaperThread = NULL;
 queue_t* g_nonRunnableQueue = NULL; //global queue for threads not scheduled to run
 queue_t* g_runnableQueue = NULL; //global queue for threads waiting to run, head of queue is currently running thread
 int g_threadIdCounter = 0; //counter for creating unique threadIds
@@ -51,11 +52,18 @@ semaphore_t* g_lock = NULL; //global lock
 
 int dummyarg = 1;
 
+void idleThreadMethod(arg_t arg){
+	while(1)
+	{
+		minithread_yield
+	}
+}
+
 
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-	if (proc == NULL || arg == NULL) return NULL;
+	if (proc == NULL) return NULL;
 
 	minithread_t* mt = malloc(sizeof(minithread_t));
 	if (mt == NULL) return NULL;
@@ -79,7 +87,7 @@ minithread_create(proc_t proc, arg_t arg) {
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
 	minithread_initialize_stack(&(mt->stacktop),proc, arg, cleanup, &dummyarg);
 	mt->threadId=g_threadIdCounter++;
-	//queue_append(g_nonRunnableQueue, mt);//add to non runnable queue, which holds threads not scheduled to run
+
 	return mt;
 }
 
@@ -169,14 +177,14 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	Creates a thread to run mainproc(mainarg)
 	This should be where all queues, global semaphores, etc.
 	are initialized.*/
-	
-	printf("hello1\n");
 
 	//initialize global variables
 	g_nonRunnableQueue =queue_new();
 	g_runnableQueue=queue_new();
 	g_threadIdCounter = 0;
 	g_lock = semaphore_create();
+	g_reaperThread = minithread_create(cleanup, dummyarg);
+	g_idleThread = miinithread_create(idleThreadMethod, dummyarg);
 
 	//need to check that our queues and lock were created correctly
 	if (g_nonRunnableQueue == NULL || g_runnableQueue == NULL || g_lock == NULL)
@@ -197,13 +205,11 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 		printf("hello2\n");
 	*/
 
-	stack_pointer_t* kThreadStackPtr = NULL;
+	stack_pointer_t* kThreadStackPtr = malloc(sizeof(stack_pointer_t*));
 
 	//running thread
 	//g_runningThread = malloc(sizeof(minithread_t));
 	g_runningThread = minithread_create(mainproc, mainarg);
-
-	printf("hello3\n");
 
 	minithread_switch(kThreadStackPtr, &(g_runningThread->stacktop));
 
