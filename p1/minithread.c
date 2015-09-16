@@ -31,6 +31,7 @@ minithread_t* g_idleThread = NULL;
 minithread_t* g_reaperThread = NULL;
 //queue_t* g_nonRunnableQueue = NULL; //global queue for threads not scheduled to run
 queue_t* g_runnableQueue = NULL; //global queue for threads waiting to run, head of queue is currently running thread
+queue_t* g_waitingQueue = NULL; //global queue for stopped threads
 queue_t* g_zombieQueue=NULL;//global queue for zombie threads waiting to be cleaned up
 int g_threadIdCounter = 0; //counter for creating unique threadIds
 semaphore_t* g_lock = NULL; //global lock
@@ -139,14 +140,25 @@ minithread_stop() {
 	}
 	//finish else
 	*/
+	minithread_t* dequeuedThread = NULL;
+		int dequeueSuccess = queue_dequeue(g_runnableQueue, (void**) &dequeuedThread); //cast dequeuedThread to a void pointer
+		if (dequeueSuccess == -1 || dequeuedThread == NULL || dequeuedThread->stacktop == NULL) return;
+
+
+		queue_append(g_waitingQueue, g_runningThread); //puts stopped thread onto waiting queue
+		minithread_t* stopping=g_runningThread;
+		g_runningThread = dequeuedThread; //point the global running thread pointer to the new running thread
+		minithread_switch(&(g_stopping->stacktop), &(dequeuedThread->stacktop)); //context switch to the dequeued thread, which is the next thread scheduled to run
+	
+
 }
 
 void
 minithread_start(minithread_t *t) {
 	//TO DO: Should use AbortOnCondition and AbortOnError to handle failing gracefully
-	if (t == NULL) return;
+	//if (t == NULL) return;
 	assert(t != NULL);
-
+    queue_delete(g_waitingQueue, t);
 	queue_append(g_runnableQueue, t);
 }
 
@@ -184,7 +196,8 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	//initialize global variables
 	//g_nonRunnableQueue =queue_new();
 	g_runnableQueue=queue_new();
-	g_zombieQueue=queue_new();
+	g_runnableQueue=queue_new();
+	g_waitingQueue=queue_new();
 	g_threadIdCounter = 0;
 	g_lock = semaphore_create();
 	g_reaperThread = minithread_create(reaperThreadMethod, NULL);
