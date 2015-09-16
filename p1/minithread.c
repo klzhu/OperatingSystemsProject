@@ -25,19 +25,12 @@
  * that you feel they must have.
  */
 
- //methods to allow for program to fail gracefully
-#define AbortOnCondition(cond,message)                       \
+ //If condition, fail gracefully and give error message
+#define AbortGracefully(cond,message)                       \
     if (cond) {                                              \
-        printf("Abort: %s:%d %d, MSG:%s\n",                  \
+        printf("Abort: %s:%d, MSG:%s\n",                  \
                __FILE__, __LINE__, message); \
         exit(1);                                             \
-    }
-
-#define AbortOnError(fctcall)                         \
-    if (fctcall == 0) {                               \
-        printf("Error: file %s line %d: code %ld.\n", \
-               __FILE__, __LINE__);   \
-        exit(1);                                      \
     }
 
 //----- Global Variables ------
@@ -162,7 +155,7 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue)
 		mt->status = READY;
 		globalQueueName = g_runQueue;
 		break;
-	DEFAULT: //thread status is set to WAIT and is inserted into wait queue
+	default: //thread status is set to WAIT and is inserted into wait queue
 		mt->status = WAIT;
 		globalQueueName = g_waitQueue;
 		break;
@@ -175,7 +168,7 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue)
 	if (globalQueueName != NULL) //there is a global queue our thread should be added to
 	{
 		int appendSuccess = queue_append(globalQueueName, mt);
-		AbortOnCondition(appendSuccess != 0, "Queue_append failed in minithread_create_helper()");
+		AbortGracefully(appendSuccess != 0, "Queue_append failed in minithread_create_helper()");
 	}
 	semaphore_V(g_mutexLock); //release lock
 
@@ -189,7 +182,7 @@ minithread_fork(proc_t proc, arg_t arg) {
 
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
-	return minithread_create_helper(proc, arg, NULL);
+	return minithread_create_helper(proc, arg, 2); 
 }
 
 minithread_t*
@@ -212,7 +205,7 @@ void minithread_scheduler(bool setToRunnable)
 {
 	minithread_t* mt = minithread_self(); //get calling thread
 	assert(mt == g_runningThread && mt != NULL && g_runQueue != NULL && g_zombieQueue != NULL);
-	assert(mt->status == RUNNING);
+	assert(mt->status == RUNNING || mt->status == DONE); //status must be either running or done
 
 	queue_t* globalQueueName = NULL; //stores which queue thread should be put onto after relinquishing processor
 	if (setToRunnable) //perform logic for yield
@@ -222,7 +215,7 @@ void minithread_scheduler(bool setToRunnable)
 	}
 	else
 	{
-		AbortOnCondition(is_unqueued_thread(mt), "Idle or reaper thread cannot be stopped"); //idle and reaper thread should never be stopped
+		AbortGracefully(is_unqueued_thread(mt), "Idle or reaper thread cannot be stopped"); //idle and reaper thread should never be stopped
 		mt->status = WAIT;
 		globalQueueName = g_waitQueue; //insert thread into wait queue
 	}
@@ -233,18 +226,18 @@ void minithread_scheduler(bool setToRunnable)
 	if (globalQueueName != NULL)
 	{
 		int appendSuccess = queue_append(globalQueueName, mt);
-		AbortOnCondition(appendSuccess != 0, "Queue append error in minithread_scheduler()");
+		AbortGracefully(appendSuccess != 0, "Queue append error in minithread_scheduler()");
 	}
 	semaphore_V(g_mutexLock); //release lock
 
 	//point g_runningThread to new running thread
-	if (queue_length(g_zombieQueue > 0)) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
-	else if (queue_length(g_runQueue == 0)) g_runningThread = g_idleThread; //if no threads left to run, switch to idle thread
+	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
+	else if (queue_length(g_runQueue) == 0) g_runningThread = g_idleThread; //if no threads left to run, switch to idle thread
 	else
 	{
 		minithread_t* dequeuedThread = NULL;
 		int dequeueSuccess = queue_dequeue(g_runQueue, (void**)&dequeuedThread); //cast dequeuedThread to a void pointer
-		AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue error in minithread_scheduler()");
+		AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in minithread_scheduler()");
 		assert(dequeuedThread != NULL && dequeuedThread->status == READY);
 		g_runningThread = dequeuedThread;
 	}
@@ -262,7 +255,7 @@ minithread_stop() {
 
 void
 minithread_start(minithread_t *t) {
-	AbortOnCondition(t == NULL, "Null argument in minithread_start()");
+	AbortGracefully(t == NULL, "Null argument in minithread_start()");
 
 	while (t->status == RUNNING); //loop while t is the thread running
 
@@ -272,9 +265,9 @@ minithread_start(minithread_t *t) {
 	semaphore_P(g_mutexLock);
 	t->status = READY;
 	int appendSuccess = queue_append(g_runQueue, t);
-	AbortOnCondition(appendSuccess != 0, "Queue_append error in minithread_start()");
+	AbortGracefully(appendSuccess != 0, "Queue_append error in minithread_start()");
 	int deletionSuccess = queue_delete(g_waitQueue, t);
-	AbortOnCondition(deletionSuccess != 0, "Queue_delete error in minithread_start()");
+	AbortGracefully(deletionSuccess != 0, "Queue_delete error in minithread_start()");
 	semaphore_V(g_mutexLock); //release lock
 }
 
@@ -293,18 +286,18 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	are initialized.*/
 
 	//initialize global variables
-	g_runQueue = queue_new(); AbortOnError(g_runQueue != NULL);
-	g_waitQueue = queue_new(); AbortOnError(g_waitQueue != NULL);
-	g_zombieQueue = queue_new(); AbortOnError(g_zombieQueue != NULL);
+	g_runQueue = queue_new(); AbortGracefully(g_runQueue == NULL, "Failed to initialize g_runQueue in minithread_system_initialize()");
+	g_waitQueue = queue_new(); AbortGracefully(g_waitQueue == NULL, "Failed to initialize g_waitQueue in minithread_system_initialize()");
+	g_zombieQueue = queue_new(); AbortGracefully(g_zombieQueue == NULL, "Failed to initialize g_zombieQueue in minithread_system_initialize()");
 
 	g_threadIdCounter = 0;
-	g_mutexLock = semaphore_create(); AbortOnError(g_mutexLock != NULL);
+	g_mutexLock = semaphore_create(); AbortGracefully(g_mutexLock == NULL, "Failed to initialize g_mutexLock in minithread_system_initialize()");
 	semaphore_initialize(g_mutexLock, 1);
 
 	//the following threads will not be in any queue, which is denoted by case 0 in minithread_create_helper
-	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, 0); AbortOnError(g_reaperThread != NULL);
-	g_idleThread = minithread_create_helper(idle_thread_method, NULL, 0); AbortOnError(g_idleThread != NULL);
-	g_runningThread = minithread_create_helper(mainproc, mainarg, 0); AbortOnError(g_runningThread != NULL);
+	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, 0); AbortGracefully(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
+	g_idleThread = minithread_create_helper(idle_thread_method, NULL, 0); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
+	g_runningThread = minithread_create_helper(mainproc, mainarg, 0); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
