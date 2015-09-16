@@ -12,6 +12,13 @@
  *      You must implement the procedures and types defined in this interface.
  */
 
+//if condition is true, abort and give error message
+#define AbortOnCondition(cond,message)                       \
+    if (cond) {                                              \
+        printf("Abort: %s:%d %d, MSG:%s\n",                  \
+               __FILE__, __LINE__, message); \
+        exit(1);                                             \
+    }
 
 /*
  * Semaphores.
@@ -60,8 +67,8 @@ void semaphore_destroy(semaphore_t *sem) {
 
 void semaphore_initialize(semaphore_t *sem, int cnt) {
 	//Validate input arguments, abort if invalid argument is seen
-	//AbortOnCondition(sem != NULL, "Null argument sem in semaphore_initialize()");
-	//AbortOnCondition(cnt < 0, "Invalid argument cnt seen in semaphore_initialize()");
+	AbortOnCondition(sem != NULL, "Null argument sem in semaphore_initialize()");
+	AbortOnCondition(cnt < 0, "Invalid argument cnt seen in semaphore_initialize()");
 
 	//use atomic_test_and_set to ensure atomic operation
 	while (atomic_test_and_set(&sem->lock)); //do nothing if locked
@@ -75,8 +82,8 @@ void semaphore_initialize(semaphore_t *sem, int cnt) {
 }
 
 void semaphore_P(semaphore_t *sem) {
-	//AbortOnCondition(sem != NULL, "Null argument sem in semaphore_P()"); //validate argument
-	//AbortOnCondition(sem->count >= 0, "Semaphore has not been initialized"); //ensure semaphore count has been initialized 
+	AbortOnCondition(sem != NULL, "Null argument sem in semaphore_P()"); //validate argument
+	AbortOnCondition(sem->count >= 0, "Semaphore has not been initialized"); //ensure semaphore count has been initialized 
 
 	assert(sem->semaWaitQ != NULL); //sanity check
 
@@ -84,24 +91,25 @@ void semaphore_P(semaphore_t *sem) {
 	while (atomic_test_and_set(&sem->lock)); //do nothing if locked	
 
 	//critical section
-	if (sem->count > 0) sem->count--;
+	if (sem->count > 0)
+	{
+		sem->count--;
+		sem->lock = 0; // release lock;
+	}
 	else
 	{
-		minithread_t* currThread = minithread_self(); //get TCB of calling thread
-		if(currThread == NULL)
-			return;
-		//AbortOnCondition(currThread != NULL, "Failed in minithread_self() method in semaphore_P()");
-
+		minithread_t* currThread = minithread_self(); //get the calling thread
+		AbortOnCondition(currThread != NULL, "Failed in minithread_self() method in semaphore_P()");
 		queue_append(sem->semaWaitQ, minithread_self); //put thread onto semaphore's wait queue
+		sem->lock = 0; //release lock
+
 		minithread_stop(); //block calling thread, yield processor
 	}
-
-	sem->lock = 0; //release lock
 }
 
 void semaphore_V(semaphore_t *sem) {
-	//AbortOnCondition(sem != NULL, "Null argument sem in semaphore_P()"); //validate argument
-	//AbortOnCondition(sem->count >= 0, "Semaphore has not been initialized"); //ensure semaphore count has been initialized 
+	AbortOnCondition(sem != NULL, "Null argument sem in semaphore_P()"); //validate argument
+	AbortOnCondition(sem->count >= 0, "Semaphore has not been initialized"); //ensure semaphore count has been initialized 
 
 	assert(sem->semaWaitQ != NULL);
 
@@ -118,8 +126,7 @@ void semaphore_V(semaphore_t *sem) {
 		minithread_t* t = NULL;
 		int dequeueSuccess = queue_dequeue(sem->semaWaitQ, (void**) &t);
 		assert(t != NULL);
-		assert(dequeueSuccess != 0);
-		//AbortOnCondition(dequeueSuccess == 0, "Failed in queue_dequeue operation in semaphore_V()");
+		AbortOnCondition(dequeueSuccess == 0, "Failed in queue_dequeue operation in semaphore_V()");
 		
 		minithread_start(t);
 	}

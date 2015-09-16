@@ -109,7 +109,7 @@ queue_dequeue(queue_t *queue, void** item) {
 int
 queue_iterate(queue_t *queue, func_t f, void* item) {
 	//if queue is empty or null
-	if (queue == NULL || item == NULL || f == NULL) return -1;
+	if (queue == NULL || f == NULL) return -1;
 
 	node* curr = queue->head;
 	while (curr != NULL)
