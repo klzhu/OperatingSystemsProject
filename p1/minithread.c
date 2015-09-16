@@ -70,20 +70,12 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
  //				 1: the thread's status is set to runnable and is inserted into ready queue
  //				 2:	the thread's status is set to wait and is inserted into wait queue
  //				 3: the thread's status is set to done and is inserted into done Queue
- void minithread_scheduler(bool setToRunnable);
+ void minithread_scheduler(int whichQueue);
 
  //This function returns true if thread is special thread (idle, reaper) and should not be on a queue
  bool is_unqueued_thread(minithread_t *mt)
  {
 	 return (mt == g_idleThread || mt == g_reaperThread);
- }
-
- // This function is to print out all thread info in a queue for debugging
- // item1 is from the queue's item
- void print_threads_in_queue(void* item1, void* item2)
- {
-	 minithread_t* mt = (minithread_t*)item1;
-	 printf("Thread at address %d: TheadID = %d, status = %d\n", item1, mt->threadId, mt->status);
  }
 
 /* minithread functions */
