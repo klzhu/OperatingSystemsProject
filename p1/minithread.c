@@ -204,7 +204,7 @@ void minithread_scheduler(int whichQueue)
 		break;
 	case 3: // the thread is set to done and is inserted into done queue
 		mt->status = DONE;
-		globalQueueName = g_zombieQueue;	// insert to non-runnable queue
+		globalQueueName = g_zombieQueue;	// insert to zombie-runnable queue
 		break;
 	default:
 		AbortGracefully(true, "Invalid value for input argument whichQueue in minithread_scheduler()");
