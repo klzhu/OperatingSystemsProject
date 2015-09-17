@@ -24,7 +24,6 @@
  * Semaphores.
  */
 struct semaphore {
-	int lock;
 	int count;
 	queue_t* semaWaitQ; //sema waiting queue
 };
@@ -35,7 +34,6 @@ semaphore_t* semaphore_create() {
 	if (s == NULL) return NULL;
 
 	s->count = -1; //set to invalid value to ensure semaphore_initialize() called before using semaphore
-	s->lock = 0; //set to unlocked
 	s->semaWaitQ = queue_new();
 
 	if (s->semaWaitQ == NULL)
@@ -50,15 +48,10 @@ semaphore_t* semaphore_create() {
 void semaphore_destroy(semaphore_t *sem) {
 	if (sem == NULL) return;
 
-	//use atomic_test_and_set to ensure atomic operation
-	while (atomic_test_and_set(&sem->lock)); //do nothing if locked
-
-	//critical section
 	assert(sem->semaWaitQ != NULL); //sanity check
 	int freeQueueSuccess = queue_free(sem->semaWaitQ); //release waiting queue
 	AbortGracefully(freeQueueSuccess != 0, "Free Queue failed in semaphore_destroy()");
 	free(sem); //release semaphore
-	sem->lock = 0; //release lock
 }
 
 void semaphore_initialize(semaphore_t *sem, int cnt) {
@@ -66,15 +59,10 @@ void semaphore_initialize(semaphore_t *sem, int cnt) {
 	AbortGracefully(sem == NULL, "Null argument sem in semaphore_initialize()");
 	AbortGracefully(cnt < 0, "Invalid argument cnt seen in semaphore_initialize()");
 
-	//use atomic_test_and_set to ensure atomic operation
-	while (atomic_test_and_set(&sem->lock)); //do nothing if locked
-
 	//critical section
 	sem->count = cnt;
 	assert(sem->semaWaitQ != NULL); //sanity checks
 	assert(sem->count == cnt);
-
-	sem->lock = 0; //release lock
 }
 
 void semaphore_P(semaphore_t *sem) {
@@ -83,21 +71,15 @@ void semaphore_P(semaphore_t *sem) {
 
 	assert(sem->semaWaitQ != NULL); //sanity check
 
-	//use atomic_test_and_set to ensure atomic operation
-	while (atomic_test_and_set(&sem->lock)); //do nothing if locked	
-
-	//critical section
 	if (sem->count > 0)
 	{
 		sem->count--;
-		sem->lock = 0; // release lock;
 	}
 	else
 	{
 		minithread_t* currThread = minithread_self(); //get the calling thread
 		AbortGracefully(currThread == NULL, "Failed in minithread_self() method in semaphore_P()");
 		queue_append(sem->semaWaitQ, currThread); //put thread onto semaphore's wait queue
-		sem->lock = 0; //release lock
 
 		minithread_stop(); //block calling thread, yield processor
 	}
@@ -109,10 +91,6 @@ void semaphore_V(semaphore_t *sem) {
 
 	assert(sem->semaWaitQ != NULL);
 
-	//use atomic_test_and_set to ensure atomic operation
-	while (atomic_test_and_set(&sem->lock)); //do nothing if locked	
-
-	//critical section
 	if (queue_length(sem->semaWaitQ) == 0) sem->count++;
 	else
 	{
@@ -126,5 +104,4 @@ void semaphore_V(semaphore_t *sem) {
 		
 		minithread_start(t);
 	}
-	sem->lock = 0; //release lock
 }
