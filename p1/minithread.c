@@ -260,7 +260,7 @@ void
 minithread_start(minithread_t *t) {
 	AbortGracefully(t == NULL, "Null argument in minithread_start()");
 
-	while (t->status == RUNNING); //loop while t is the thread running
+	if (t->status == RUNNING) return; 
 
 	assert(g_waitQueue != NULL && g_mutexLock != NULL);
 	

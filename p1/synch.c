@@ -48,7 +48,7 @@ semaphore_t* semaphore_create() {
 }
 
 void semaphore_destroy(semaphore_t *sem) {
-	AbortGracefully(sem == NULL, "Null argument sem in semaphore_initialize()");
+	if (sem == NULL) return;
 
 	//use atomic_test_and_set to ensure atomic operation
 	while (atomic_test_and_set(&sem->lock)); //do nothing if locked
@@ -56,11 +56,7 @@ void semaphore_destroy(semaphore_t *sem) {
 	//critical section
 	assert(sem->semaWaitQ != NULL); //sanity check
 	int freeQueueSuccess = queue_free(sem->semaWaitQ); //release waiting queue
-	if (freeQueueSuccess == -1) //if freeing operation failed
-	{
-		sem->lock = 0; //free lock
-		return;
-	}
+	AbortGracefully(freeQueueSuccess != 0, "Free Queue failed in semaphore_destroy()");
 	free(sem); //release semaphore
 	sem->lock = 0; //release lock
 }
@@ -99,8 +95,8 @@ void semaphore_P(semaphore_t *sem) {
 	else
 	{
 		minithread_t* currThread = minithread_self(); //get the calling thread
-		AbortGracefully(currThread != NULL, "Failed in minithread_self() method in semaphore_P()");
-		queue_append(sem->semaWaitQ, minithread_self); //put thread onto semaphore's wait queue
+		AbortGracefully(currThread == NULL, "Failed in minithread_self() method in semaphore_P()");
+		queue_append(sem->semaWaitQ, currThread); //put thread onto semaphore's wait queue
 		sem->lock = 0; //release lock
 
 		minithread_stop(); //block calling thread, yield processor
