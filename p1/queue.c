@@ -2,6 +2,7 @@
 * Generic queue implementation.
 *
 */
+#define NDEBUG 
 #include "queue.h"
 #include <stdlib.h>
 #include <stdio.h>
