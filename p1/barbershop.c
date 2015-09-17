@@ -72,7 +72,8 @@ typedef struct barber{
 }barber;
 typedef struct customer{
 	int customerId;
-	minithread_t* preferredBarber;//int preferredBarberId??
+	barber* preferredBarber;
+	minithread_t* preferredBarberT;//int preferredBarberId??
     //minithread_t* customerThread;
 }customer;
 
@@ -88,22 +89,25 @@ int getHaircut(customer* c){
 	//call barber to cutHair --context switch into it?
 	     //and after done stop itself..or like do whatever there is to signal that this thread is done---after returns from this method is put on zombie queue by cleanup
 	//while busy then yield--call barbers semaphore first try p then do v
-	minithread_t* thisCustomer=minithread_self();
-	minithread_switch((void**)(&thisCustomer), (void**)&(c->preferredBarber));
+	//minithread_t* thisCustomer=minithread_self();
+	//minithread_switch((void**)(&(thisCustomer->stacktop)), (void**)&(c->preferredBarber->stacktop));
+	semaphore_P(c->preferredBarber->barberBusy);
+	minithread_start(c->preferredBarberT);
+	semaphore_V(c->preferredBarber->barberBusy);
 	semaphore_V(shopRoom);
 	return 0;
 }
 
 int cutHair(barber* b){//int called){ how to pass 2 args
 	printf("cut hair");
-	semaphore_P(b->barberBusy);
+	//semaphore_P(b->barberBusy);
 	//int called specifies if barber was called by a customer(1) but if 0 barber can go to find customer
 //set barber busy
 //cut hair
 //set barber not busy, and return
 	int hair=12;
 	hair=hair/2;
-	semaphore_V(b->barberBusy);
+	//semaphore_V(b->barberBusy);
 	return 0;
 }
 
@@ -116,15 +120,16 @@ int N=5;//total customers
 semaphore_initialize(shopRoom,k);
 //shop that holds barbers
 minithread_t* allBarberThreads[M];
-
+barber* allBarbers[M];
 //create barbers to fill shop
 int i=0;
 while(i<M){
 	barber* b=malloc(sizeof(barber));
 	b->barberId=i;
 	b->barberBusy=semaphore_create();
-	semaphore_initialize(b->barberBusy,0);
+	semaphore_initialize(b->barberBusy,1);
 	allBarberThreads[i]=minithread_create((proc_t)cutHair,(arg_t)b);
+	allBarbers[i]=b;
 	i+=1;
 }
 
@@ -141,7 +146,8 @@ while(i<M){
 	srand((unsigned) time(&t));
 	int r=rand()%M;
 	//printf("create customer2");
-	c->preferredBarber=allBarberThreads[r];
+	c->preferredBarber=allBarbers[r];
+	c->preferredBarberT=allBarberThreads[r];
 	//printf("create customer");
 	minithread_fork((proc_t)getHaircut,(arg_t)c);
 i+=1;
