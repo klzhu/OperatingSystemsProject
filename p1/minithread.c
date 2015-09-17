@@ -100,7 +100,7 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
 			 free(threadToClean);
 		 }
 
-		 minithread_scheduler(0);
+		 minithread_scheduler(0); //case 0: the thread is set to runnable and is not inserted into any queue
 	 }
 
 	 return -1; //should never return
@@ -114,7 +114,7 @@ int idle_thread_method(arg_t arg){
 	{
 		while (queue_length(g_runQueue) == 0); //if there are no threads in run queue to run, loop
 		
-		minithread_scheduler(0);
+		minithread_scheduler(0); // the thread is set to runnable and is not inserted into any queue
 	}
 
 	return -1; //should never return
@@ -162,12 +162,12 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue)
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-	return minithread_create_helper(proc, arg, 1);
+	return minithread_create_helper(proc, arg, 1); //Case 1: set status to READY and insert into run queue
 }
 
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
-	return minithread_create_helper(proc, arg, 2); 
+	return minithread_create_helper(proc, arg, 2); //Case 2: set status to WAIT and insert into wait queue
 }
 
 minithread_t*
@@ -240,7 +240,7 @@ void minithread_scheduler(int whichQueue)
 
 void
 minithread_stop() { //gives up processor and is put onto wait queue (case 2)
-	minithread_scheduler(2);
+	minithread_scheduler(2); //case 2: the thread is set to wait and is inserted into wait queue
 }
 
 void
