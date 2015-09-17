@@ -1,5 +1,5 @@
-Name 1:
-NetID 1:
+Name 1: Kevin Zhu
+NetID 1: klz22
 
 Name 2:
 NetID 2:
