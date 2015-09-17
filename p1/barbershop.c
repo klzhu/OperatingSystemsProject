@@ -52,7 +52,7 @@ barbers=threads cutting hair;
 //3 start customers
 //if barber not busy then start barber-OR customer starts barber , **so customer comes makes barber work after barber done customer also done**
 //create barbers
-//when creating customers, have pointer to preferred barber thread?--but then need like array of barbers first--whatever, ill just do it with array too late to think much 
+
  
 #include <stdlib.h>
 #include <stdio.h>
@@ -68,13 +68,11 @@ barbers=threads cutting hair;
 typedef struct barber{
 	int barberId;
 	semaphore_t* barberBusy;
-	//minithread_t* barberThread; maybe not needed
 }barber;
 typedef struct customer{
 	int customerId;
 	barber* preferredBarber;
-	minithread_t* preferredBarberT;//int preferredBarberId??
-    //minithread_t* customerThread;
+	minithread_t* preferredBarberT;
 }customer;
 
 semaphore_t* shopRoom=NULL;
@@ -84,18 +82,12 @@ int getHaircut(customer* c){
 	
 	printf("request cut");
 	semaphore_P(shopRoom);
-	//select preferred barber--HOW? of the free barbers check their ids?
-	//if not busy
-	//call barber to cutHair --context switch into it?
-	     //and after done stop itself..or like do whatever there is to signal that this thread is done---after returns from this method is put on zombie queue by cleanup
-	//while busy then yield--call barbers semaphore first try p then do v
-	//minithread_t* thisCustomer=minithread_self();
-	//minithread_switch((void**)(&(thisCustomer->stacktop)), (void**)&(c->preferredBarber->stacktop));
+
 	semaphore_P(c->preferredBarber->barberBusy);
 	minithread_start(c->preferredBarberT);
-	semaphore_V(c->preferredBarber->barberBusy);
 	semaphore_V(shopRoom);
-	return 0;
+	
+return 0;
 }
 
 int cutHair(barber* b){//int called){ how to pass 2 args
@@ -107,6 +99,7 @@ int cutHair(barber* b){//int called){ how to pass 2 args
 //set barber not busy, and return
 	int hair=12;
 	hair=hair/2;
+	semaphore_V(b->barberBusy);
 	//semaphore_V(b->barberBusy);
 	return 0;
 }
@@ -152,6 +145,7 @@ while(i<M){
 	minithread_fork((proc_t)getHaircut,(arg_t)c);
 i+=1;
 }
+printf("finished while");
 return 0;
 }
 
