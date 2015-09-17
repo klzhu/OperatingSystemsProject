@@ -62,7 +62,7 @@ barbers=threads cutting hair;
 }barber;
 typedef struct customer{
 	int customerId;
-	barber preferredBarber;//int preferredBarberId??
+	minithread_t* preferredBarber;//int preferredBarberId??
     //minithread_t* customerThread;
 }customer;
 
@@ -70,7 +70,7 @@ int getHaircut(customer c,semaphore_t* numAllowed){
 	numAllowed.P();
 	//select preferred barber--HOW? of the free barbers check their ids?
 	//if not busy
-	//call barber to cutHair 
+	//call barber to cutHair --context switch into it?
 	     //and after done stop itself..or like do whatever there is to signal that this thread is done
 	//if busy then yield--call barbers semaphore first try p then do v
 	numAllowed.V();
@@ -78,7 +78,7 @@ return 0;
 
 }
 
-int cutHair(barber b, int called){
+int cutHair(barber* b){//int called){ how to pass 2 args
 
 	b->barberBusy.P();
 	//int called specifies if barber was called by a customer(1) but if 0 barber can go to find customer
@@ -95,6 +95,15 @@ int M=0;//barbers
 int N=0;//total customers
 semaphore_t* shopRoom=semaphore_create();
 semaphore_initialize(k);
+minithread_t* allBarberThreads[M];
+int i=0;
+while(i<M){
+	barber* b=malloc(sizeof(barber));
+	b->barberId=i;
+	semaphore_initialize(b->barberBusy,0);
+	allBarberThreads[i]=minithread_create(cutHair,b);
+}
+
 //1. create all barbers and customers, use fork, in the order we want them to execute
 //preferred:
  //time_t t; 
@@ -109,6 +118,17 @@ semaphore_initialize(k);
 //when creating customers, have pointer to preferred barber thread?--but then need like array of barbers first--whatever, ill just do it with array
 
   printf("The barbershop is open for business!\n");
+  while(i<N){
+	customer* c=malloc(sizeof(customer));
+	c->customerId=i;
+	time_t t; 
+	srand((unsigned) time(&t));
+	int r=rand()%M;
+	c->preferredBarber=allBarberThreads[r];
+	minithread_fork(getHaircut,c);
+
+}
+//now start first consumer--use minithread start? or context switch?
   return 0;
 }
 
