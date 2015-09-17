@@ -91,8 +91,8 @@ int getHaircut(customer* c){
 	//minithread_switch((void**)(&(thisCustomer->stacktop)), (void**)&(c->preferredBarber->stacktop));
 	semaphore_P(c->preferredBarber->barberBusy);
 	minithread_start(c->preferredBarberT);
-	semaphore_V(c->preferredBarber->barberBusy);
 	semaphore_V(shopRoom);
+	
 return 0;
 
 }
@@ -106,6 +106,7 @@ int cutHair(barber* b){//int called){ how to pass 2 args
 //set barber not busy, and return
 	int hair=12;
 	hair=hair/2;
+	semaphore_V(b->barberBusy);
 	//semaphore_V(b->barberBusy);
 	return 0;
 }
@@ -151,6 +152,7 @@ while(i<M){
 	minithread_fork((proc_t)getHaircut,(arg_t)c);
 i+=1;
 }
+printf("finished while");
 return 0;
 }
 

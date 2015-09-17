@@ -1,7 +1,7 @@
 Name 1: Kevin Zhu
 NetID 1: klz22
 
-Name 2:
-NetID 2:
+Name 2:Yevhenia Stets
+NetID 2:yvs4
 
 Comments (optional):
