@@ -1,21 +1,7 @@
 /*
  * barbershop.c:
  *      Your comments go here
- *      
- *
- *
- */
-#include <stdlib.h>
-#include <stdio.h>
-#include "minithread.h"
-#include "queue.h"
-#include "synch.h"
-
-#include <assert.h>
-
-
- /*
- A barbershop holds up to k customers, and M barbers work on the customers. Each customer has a specific barber that they want to have their hair cut by.
+ *     A barbershop holds up to k customers, and M barbers work on the customers. Each customer has a specific barber that they want to have their hair cut by.
   You should implement this for any N customers, M barbers, and shop of size k (each of them >=1).
   while N create customers,
   while M create barbers
@@ -54,8 +40,20 @@ barbers=threads cutting hair;
 //2.have barbers do work in turn
 //when a barber done: send finished customer to done state , signal for another customer to enter
 //once that customer enters, if matched with barber proceed to cut hair and switch to next barber
-//but if not...do we not let anyone in until customer gets his barber?...so like if everyone in waiting room waiting for 1 barber...is bad but in this case they would not let anyone else in
- typedef struct barber{
+//but if not...do we not let anyone in until customer gets his barber?...so like if everyone in waiting room waiting for 1 barber...is bad but in this case they would not let anyone else in 
+ 
+#include <stdlib.h>
+#include <stdio.h>
+#include "minithread.h"
+#include "queue.h"
+#include "synch.h"
+
+#include <assert.h>
+
+
+ 
+ 
+typedef struct barber{
 	int barberId;
 	semaphore_t* barberBusy;
 	//minithread_t* barberThread; maybe not needed
@@ -66,35 +64,41 @@ typedef struct customer{
     //minithread_t* customerThread;
 }customer;
 
-semaphore_t* shopRoom=semaphore_create();
+semaphore_t* shopRoom=NULL;
 
-int getHaircut(customer c){
-	shopRoom.P();
+int getHaircut(customer* c){
+		printf("request cut");
+	semaphore_P(shopRoom);
 	//select preferred barber--HOW? of the free barbers check their ids?
 	//if not busy
 	//call barber to cutHair --context switch into it?
 	     //and after done stop itself..or like do whatever there is to signal that this thread is done
-	//if busy then yield--call barbers semaphore first try p then do v
-	shopRoom.V();
+	//while busy then yield--call barbers semaphore first try p then do v
+	minithread_t* thisCustomer=minithread_self();
+	minithread_switch((void**)(&thisCustomer), (void**)&(c->preferredBarber));
+	semaphore_V(shopRoom);
 return 0;
 
 }
 
 int cutHair(barber* b){//int called){ how to pass 2 args
-
-	b->barberBusy.P();
+	printf("cut hair");
+	semaphore_P(b->barberBusy);
 	//int called specifies if barber was called by a customer(1) but if 0 barber can go to find customer
 //set barber busy
 //cut hair
 //set barber not busy, and return
-	b->barberBusy.V();
+	int hair=12;
+	hair=hair/2;
+	semaphore_V(b->barberBusy);
 	return 0;
 }
 
-int main(void) {
-int k=0;//shop sapce(wait room)
-int M=0;//barbers
-int N=0;//total customers
+int runShop(){
+shopRoom =semaphore_create();
+int k=5;//shop sapce(wait room)
+int M=5;//barbers
+int N=5;//total customers
 
 semaphore_initialize(shopRoom,k);
 minithread_t* allBarberThreads[M];
@@ -102,8 +106,10 @@ int i=0;
 while(i<M){
 	barber* b=malloc(sizeof(barber));
 	b->barberId=i;
+	b->barberBusy=semaphore_create();
 	semaphore_initialize(b->barberBusy,0);
-	allBarberThreads[i]=minithread_create(cutHair,b);
+	allBarberThreads[i]=minithread_create((proc_t)cutHair,(arg_t)b);
+	i+=1;
 }
 
 //1. create all barbers and customers, use fork, in the order we want them to execute
@@ -117,21 +123,31 @@ while(i<M){
 //3 start customers
 //if barber not busy then start barber-OR customer starts barber , **so customer comes makes barber work after barber done customer also done**
 //create barbers
-//when creating customers, have pointer to preferred barber thread?--but then need like array of barbers first--whatever, ill just do it with array
+//when creating customers, have pointer to preferred barber thread?--but then need like array of barbers first--whatever, ill just do it with array too late to think much
 
   printf("The barbershop is open for business!\n");
-  i=0
+  printf("before create customer");
+  i=0;
   while(i<N){
+  	printf("create customer1");
 	customer* c=malloc(sizeof(customer));
 	c->customerId=i;
 	time_t t; 
 	srand((unsigned) time(&t));
 	int r=rand()%M;
+	printf("create customer2");
 	c->preferredBarber=allBarberThreads[r];
-	minithread_fork(getHaircut,c);
-
+	printf("create customer");
+	minithread_fork((proc_t)getHaircut,(arg_t)c);
+i+=1;
 }
+return 0;
+}
+
+int main(int argc, char * argv[]) {
+
 //now start first consumer--use minithread start? or context switch?
+  minithread_system_initialize(runShop, NULL);//make run Shop method
   return 0;
 }
 
