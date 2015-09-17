@@ -93,6 +93,7 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
 		 {
 			 minithread_t* threadToClean = NULL;
 			 int dequeueSuccess = queue_dequeue(g_zombieQueue, (void**)&threadToClean);
+			 AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in reaper_thread_method()");
 
 			 assert(dequeueSuccess == 0 && threadToClean != NULL && threadToClean->stackbase != NULL);
 			 minithread_free_stack(threadToClean->stackbase);
