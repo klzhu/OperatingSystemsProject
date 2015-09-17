@@ -7,6 +7,8 @@
  *      NAMING AND TYPING OF THESE PROCEDURES.
  *
  */
+
+#define NDEBUG 
 #include <stdlib.h>
 #include <stdio.h>
 #include "minithread.h"
