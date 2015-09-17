@@ -66,14 +66,16 @@ typedef struct customer{
     //minithread_t* customerThread;
 }customer;
 
-int getHaircut(customer c,semaphore_t* numAllowed){
-	numAllowed.P();
+semaphore_t* shopRoom=semaphore_create();
+
+int getHaircut(customer c){
+	shopRoom.P();
 	//select preferred barber--HOW? of the free barbers check their ids?
 	//if not busy
 	//call barber to cutHair --context switch into it?
 	     //and after done stop itself..or like do whatever there is to signal that this thread is done
 	//if busy then yield--call barbers semaphore first try p then do v
-	numAllowed.V();
+	shopRoom.V();
 return 0;
 
 }
@@ -93,8 +95,8 @@ int main(void) {
 int k=0;//shop sapce(wait room)
 int M=0;//barbers
 int N=0;//total customers
-semaphore_t* shopRoom=semaphore_create();
-semaphore_initialize(k);
+
+semaphore_initialize(shopRoom,k);
 minithread_t* allBarberThreads[M];
 int i=0;
 while(i<M){
@@ -118,6 +120,7 @@ while(i<M){
 //when creating customers, have pointer to preferred barber thread?--but then need like array of barbers first--whatever, ill just do it with array
 
   printf("The barbershop is open for business!\n");
+  i=0
   while(i<N){
 	customer* c=malloc(sizeof(customer));
 	c->customerId=i;
