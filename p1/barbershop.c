@@ -79,7 +79,9 @@ typedef struct customer{
 semaphore_t* shopRoom=NULL;
 
 int getHaircut(customer* c){
-		printf("request cut");
+	if (c == NULL) return -1;
+	
+	printf("request cut");
 	semaphore_P(shopRoom);
 	//select preferred barber--HOW? of the free barbers check their ids?
 	//if not busy
@@ -89,8 +91,7 @@ int getHaircut(customer* c){
 	minithread_t* thisCustomer=minithread_self();
 	minithread_switch((void**)(&thisCustomer), (void**)&(c->preferredBarber));
 	semaphore_V(shopRoom);
-return 0;
-
+	return 0;
 }
 
 int cutHair(barber* b){//int called){ how to pass 2 args
@@ -149,9 +150,7 @@ return 0;
 }
 
 int main(int argc, char * argv[]) {
-
-//now start first consumer--use minithread start? or context switch?
-  minithread_system_initialize(runShop, NULL);//make run Shop method
+  minithread_system_initialize(runShop, NULL); //start system
   return 0;
 }
 
