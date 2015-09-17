@@ -253,7 +253,7 @@ minithread_start(minithread_t *t) {
 	int appendSuccess = queue_append(g_runQueue, t);
 	AbortGracefully(appendSuccess != 0, "Queue_append error in minithread_start()");
 	int deletionSuccess = queue_delete(g_waitQueue, t);
-	AbortGracefully(deletionSuccess != 0, "Queue_delete error in minithread_start()");
+	AbortGracefully(deletionSuccess != 0, "Queue_delete error in minithread_start(), invalid arguments or thread not found in wait queue");
 }
 
 void
