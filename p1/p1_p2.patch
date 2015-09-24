@@ -1,0 +1,850 @@
+diff -rupN ../1/release/.depend release/.depend
+--- ../1/release/.depend	1969-12-31 19:00:00.000000000 -0500
++++ release/.depend	2015-09-23 20:59:29.000000000 -0400
+@@ -0,0 +1,21 @@
++alarm.o: alarm.c interrupts.h defs.h alarm.h minithread.h \
++  machineprimitives.h queue.h
++buffer.o: buffer.c minithread.h machineprimitives.h defs.h synch.h \
++  random.h
++common.o: common.c common.h
++end.o: end.c defs.h
++machineprimitives.o: machineprimitives.c defs.h minithread.h \
++  machineprimitives.h
++machineprimitives_x86_64.o: machineprimitives_x86_64.c defs.h \
++  interrupts.h machineprimitives.h minithread.h
++minithread.o: minithread.c interrupts.h defs.h minithread.h \
++  machineprimitives.h queue.h synch.h
++multilevel_queue.o: multilevel_queue.c multilevel_queue.h queue.h
++queue.o: queue.c queue.h
++random.o: random.c
++sieve.o: sieve.c minithread.h machineprimitives.h defs.h synch.h
++start.o: start.c defs.h
++synch.o: synch.c defs.h synch.h queue.h minithread.h machineprimitives.h
++test1.o: test1.c minithread.h machineprimitives.h defs.h
++test2.o: test2.c minithread.h machineprimitives.h defs.h
++test3.o: test3.c minithread.h machineprimitives.h defs.h synch.h
+diff -rupN ../1/release/Makefile release/Makefile
+--- ../1/release/Makefile	2015-09-20 16:33:52.000000000 -0400
++++ release/Makefile	2015-09-23 21:07:54.000000000 -0400
+@@ -10,7 +10,7 @@ default: all
+ #    necessary PortOS code.
+ #
+ # this would be a good place to add your tests
+-all: test1 test2 test3 buffer sieve barbershop
++all: test1 test2 test3 buffer sieve
+ 
+ # running "make clean" will remove all files ignored by git.  To ignore more
+ # files, you should add them to the file .gitignore
+@@ -22,7 +22,7 @@ clean:
+ 
+ CC     = gcc
+ CFLAGS = -mno-red-zone -fno-omit-frame-pointer -g -O0 -I. \
+-         -Wall -Werror
++         -Wall -Werror -std=gnu99
+ LFLAGS = -lrt -pthread -g
+ 
+ OBJ =                              \
+@@ -32,11 +32,14 @@ OBJ =                              \
+     machineprimitives_x86_64.o     \
+     machineprimitives_x86_64_asm.o \
+     random.o                       \
++    alarm.o                        \
+     queue.o                        \
+-    synch.o
++    synch.o                        \
++    multilevel_queue.o             \
++    common.o
+ 
+ %: %.o start.o end.o $(OBJ) $(SYSTEMOBJ)
+-	$(CC) $(LIB) start.o $(OBJ) end.o $(LFLAGS) -o $@ $<
++	$(CC) $(LIB) -o $@ start.o $(filter-out start.o end.o $(SYSTEMOBJ), $^) end.o $(SYSTEMOBJ) $(LFLAGS)
+ 
+ %.o: %.c
+ 	$(CC) $(CFLAGS) -c $<
+diff -rupN ../1/release/README release/README
+--- ../1/release/README	2015-09-20 16:33:52.000000000 -0400
++++ release/README	2015-09-20 16:33:52.000000000 -0400
+@@ -27,9 +27,11 @@ This release contains three groups of fi
+     - random.*
+ 
+ 2. the threading library itself
+-    - minithread.*
++    - minithread.*       <-- updated in project 2!
+     - queue.*
+-    - synch.*
++    - multilevel_queue.* <-- new in project 2!
++    - synch.*            <-- you will need to edit in project 2!
++    - alarm.*            <-- new in project 2!
+ 
+ 3. sample applications
+     - buffer.c
+diff -rupN ../1/release/alarm.c release/alarm.c
+--- ../1/release/alarm.c	1969-12-31 19:00:00.000000000 -0500
++++ release/alarm.c	2015-09-20 16:33:52.000000000 -0400
+@@ -0,0 +1,24 @@
++#include <stdio.h>
++
++#include "interrupts.h"
++#include "alarm.h"
++#include "minithread.h"
++#include "queue.h"
++
++/* see alarm.h */
++alarm_id
++register_alarm(int delay, alarm_handler_t alarm, void *arg)
++{
++    return NULL;
++}
++
++/* see alarm.h */
++int
++deregister_alarm(alarm_id alarm)
++{
++    return 1;
++}
++
++/*
++** vim: ts=4 sw=4 et cindent
++*/
+diff -rupN ../1/release/alarm.h release/alarm.h
+--- ../1/release/alarm.h	1969-12-31 19:00:00.000000000 -0500
++++ release/alarm.h	2015-09-20 16:33:52.000000000 -0400
+@@ -0,0 +1,27 @@
++#ifndef __ALARM_H__
++#define __ALARM_H__ 1
++
++/*
++ * This is the alarm interface. You should implement the functions for these
++ * prototypes, though you may have to modify some other files to do so.
++ */
++
++
++/* An alarm_handler_t is a function that will run within the interrupt handler.
++ * It must not block, and it must not perform I/O or any other long-running
++ * computations.
++ */
++typedef void (*alarm_handler_t)(void*);
++typedef void *alarm_id;
++
++/* register an alarm to go off in "delay" milliseconds.  Returns a handle to
++ * the alarm.
++ */
++alarm_id register_alarm(int delay, alarm_handler_t func, void *arg);
++
++/* unregister an alarm.  Returns 0 if the alarm had not been executed, 1
++ * otherwise.
++ */
++int deregister_alarm(alarm_id id);
++
++#endif
+diff -rupN ../1/release/barbershop.c release/barbershop.c
+--- ../1/release/barbershop.c	2015-09-15 23:42:22.000000000 -0400
++++ release/barbershop.c	1969-12-31 19:00:00.000000000 -0500
+@@ -1,22 +0,0 @@
+-/*
+- * barbershop.c:
+- *      Your comments go here
+- *      
+- *
+- *
+- */
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "minithread.h"
+-#include "queue.h"
+-#include "synch.h"
+-
+-#include <assert.h>
+-
+-int main(void) {
+-
+-  printf("The barbershop is open for business!\n");
+-  return 0;
+-}
+-
+-
+diff -rupN ../1/release/buffer.c release/buffer.c
+--- ../1/release/buffer.c	2015-09-20 16:33:52.000000000 -0400
++++ release/buffer.c	2015-09-23 21:07:54.000000000 -0400
+@@ -12,15 +12,15 @@
+ #include "minithread.h"
+ #include "synch.h"
+ #include "random.h"
+-
+ #define BUFFER_SIZE 16
+-static const int MAXCOUNT = 1000;
+ 
+-static int buffer[BUFFER_SIZE];
+-static int size = 0, head = 0, tail = 0;
++#define MAXCOUNT  1000
++
++int buffer[BUFFER_SIZE];
++int size, head, tail;
+ 
+-static semaphore_t *empty = NULL;
+-static semaphore_t *full = NULL;
++semaphore_t* empty = NULL;
++semaphore_t* full = NULL;
+ 
+ int consumer(int* arg) {
+   int n, i;
+diff -rupN ../1/release/common.c release/common.c
+--- ../1/release/common.c	1969-12-31 19:00:00.000000000 -0500
++++ release/common.c	2015-09-18 01:06:27.000000000 -0400
+@@ -0,0 +1,9 @@
++/*
++ * Implementations for common utilities.
++ *
++ */
++#include <stdlib.h>
++#include <stdio.h>
++#include "common.h"
++
++ // Add any function implementations here
+\ No newline at end of file
+diff -rupN ../1/release/common.h release/common.h
+--- ../1/release/common.h	1969-12-31 19:00:00.000000000 -0500
++++ release/common.h	2015-09-18 01:06:27.000000000 -0400
+@@ -0,0 +1,9 @@
++/*
++ * Common utilities header file
++ */
++#ifndef __COMMON_H__
++#define __COMMON_H__
++
++// Add any constants, function signatures, etc. here
++
++#endif /*__COMMON_H__*/
+\ No newline at end of file
+diff -rupN ../1/release/interrupts.c release/interrupts.c
+--- ../1/release/interrupts.c	2015-09-20 16:33:52.000000000 -0400
++++ release/interrupts.c	2015-09-20 16:33:52.000000000 -0400
+@@ -96,7 +96,7 @@ interrupt_level_t set_interrupt_level(in
+  * chances of an overrun.
+  */
+ void
+-minithread_clock_init(interrupt_handler_t clock_handler){
++minithread_clock_init(int period, interrupt_handler_t clock_handler){
+     timer_t timerid;
+     struct sigevent sev;
+     struct itimerspec its;
+@@ -118,7 +118,8 @@ minithread_clock_init(interrupt_handler_
+         abort();
+     }
+ 
+-    printf("SIGRTMAX = %d\n",SIGRTMAX);
++    if(DEBUG)
++        printf("SIGRTMAX = %d\n",SIGRTMAX);
+ 
+     /* Establish handler for timer signal */
+     sa.sa_handler = (void*)handle_interrupt;
+@@ -138,8 +139,8 @@ minithread_clock_init(interrupt_handler_
+         errExit("timer_create");
+ 
+     /* Start the timer */
+-    its.it_value.tv_sec = (PERIOD) / 1000000000;
+-    its.it_value.tv_nsec = (PERIOD) % 1000000000;
++    its.it_value.tv_sec = (period) / 1000000000;
++    its.it_value.tv_nsec = (period) % 1000000000;
+     its.it_interval.tv_sec = its.it_value.tv_sec;
+     its.it_interval.tv_nsec = its.it_value.tv_nsec;
+ 
+diff -rupN ../1/release/interrupts.h release/interrupts.h
+--- ../1/release/interrupts.h	2015-09-20 16:33:52.000000000 -0400
++++ release/interrupts.h	2015-09-20 16:33:52.000000000 -0400
+@@ -9,6 +9,13 @@
+  * Calling minithreads_clock_init will start the clock device and
+  * enable interrupts.
+  *
++ * Interrupts are disabled when running code that is not part of the
++ * minithreads package (e.g. printf or gettimeofday), or if they are explicitly
++ * disabled (see set_interrupt_level below).  Any interrupts that occur while
++ * interrupts are disabled will be dropped.  Thus if you want to reliably
++ * receive interrupts, you must avoid spending a large portion of time with
++ * interrupts disabled.
++ *
+  * YOU SHOULD NOT [NEED TO] MODIFY THIS FILE.
+  */
+ 
+@@ -17,34 +24,8 @@
+ 
+ #include "defs.h"
+ 
+-/*
+- * a global variable to maintain time.
+- */
+-extern long ticks;
+-
+-/*
+- * period is the frequency of the clock tick.
+- */
+-#define MICROSECOND 1000
+-#define MILLISECOND (1000*MICROSECOND)
+-#define SECOND (1000*MILLISECOND)
+-#define PERIOD (50*MILLISECOND)
+-
+-/*
+- * Virtual processor interrupt level.
+- * Are interrupts enabled? A new interrupt will only be taken when interrupts
+- * are enabled.
+- */
+-typedef int interrupt_level_t;
+-extern interrupt_level_t interrupt_level;
+-
+-#define DISABLED 0
+-#define ENABLED 1
+-
+-
+-typedef void(*interrupt_handler_t)(void*);
+-/*
+- * Set the interrupt level to newlevel, return the old interrupt level
++/* set_interrupt_level(interrupt_level_t level)
++ *      Set the interrupt level to newlevel, return the old interrupt level
+  *
+  * You should generally make changes to the interrupt level in a set/restore
+  * pair. Be careful about restoring the interrupt level. Your
+@@ -70,20 +51,34 @@ typedef void(*interrupt_handler_t)(void*
+  * to minithread_switch: the minithread switch code resets the interrupt
+  * level to ENABLED itself.
+  *
+- * Note that you should minimize the amount of time interrupts are disabled
+- * in order to reduce the impact on the real-time performance of your system.
++ * Interrupts that occur while interrupts are disabled are dropped, so you
++ * should minimize the amount of time interrupts are disabled in order to
++ * reduce the number of dropped interrupts.
+  */
+ 
+-interrupt_level_t set_interrupt_level(interrupt_level_t newlevel);
++typedef int interrupt_level_t;
++extern interrupt_level_t interrupt_level;
++
++#define DISABLED 0
++#define ENABLED 1
++
++extern interrupt_level_t set_interrupt_level(interrupt_level_t newlevel);
++
+ 
+ /*
+- * minithread_clock_init installs your clock interrupt service routine
+- * h.  h will be called every PERIOD microseconds (defined above).
+- * interrupts are disabled after minithread_clock_init finishes.
+- * After you enable interrupts then your handler will be called
+- * automatically on every clock tick.
++ * minithread_clock_init(h,period)
++ *     installs a clock interrupt service routine h.  h will be called every
++ *     [period] nanoseconds.  interrupts are disabled after
++ *     minithread_clock_init finishes.  After you enable interrupts then your
++ *     handler will be called automatically on every clock tick.
+  */
+-void minithread_clock_init(interrupt_handler_t h);
++#define NANOSECOND  1
++#define MICROSECOND (1000*NANOSECOND)
++#define MILLISECOND (1000*MICROSECOND)
++#define SECOND      (1000*MILLISECOND)
++
++typedef void(*interrupt_handler_t)(void*);
++extern void minithread_clock_init(int period, interrupt_handler_t h);
+ 
+ #endif /* __INTERRUPTS_H__ */
+ 
+diff -rupN ../1/release/machineprimitives.c release/machineprimitives.c
+--- ../1/release/machineprimitives.c	2015-09-20 16:33:52.000000000 -0400
++++ release/machineprimitives.c	2015-09-20 16:33:52.000000000 -0400
+@@ -8,14 +8,17 @@
+  */
+ #include <stdio.h>
+ #include <stdlib.h>
+-#include <sys/mman.h>
+-
+ #include "defs.h"
+ #include "minithread.h"
+ #include "machineprimitives.h"
++#include <sys/mman.h>
+ 
++/*
++ * Used to initialize a thread's stack for the first context switch
++ * to the thread.  The minithread_root procedure will be run with the
++ * main and final procedures saved on the thread's stack
++ */
+ typedef struct initial_stack_state *initial_stack_state_t;
+-
+ struct initial_stack_state
+ {
+   void *body_proc;            /* v1 or ebx */
+@@ -33,13 +36,22 @@ struct initial_stack_state
+   void *rax;
+   void *rcx;
+   void *rdx;
++#ifdef WINCE
++  int   v5;
++  int   v6;
++  int   sl;
++  int   fp;
++#endif
+   void *root_proc;            /* left on stack */
+ };
+ 
+-static const int STACK_GROWS_DOWN      = 1;
+-static const int STACKSIZE             = (256 * 1024);
+-static const int STACKALIGN            = 0xf;
++#define STACK_GROWS_DOWN        1
++#define STACKSIZE               (256 * 1024)
++#define STACKALIGN              0xf
+ 
++/*
++ * Allocate a new stack.
++ */
+ void
+ minithread_allocate_stack(stack_pointer_t *stackbase, stack_pointer_t *stacktop)
+ {
+@@ -58,6 +70,11 @@ minithread_allocate_stack(stack_pointer_
+     }
+ }
+ 
++/*
++ * Free a stack.
++ *
++ * The stack cannot be used after this call.
++ */
+ void
+ minithread_free_stack(stack_pointer_t stackbase)
+ {
+@@ -69,9 +86,16 @@ minithread_free_stack(stack_pointer_t st
+  */
+ extern int minithread_root();
+ 
++/*
++ * Initialize a stack.
++ *      Stack frame is set up so that thread calls:
++ *              initial_proc(initial_arg);
++ *              body_proc(body_arg);
++ *              finally_proc(finally_arg);
++ */
+ void
+ minithread_initialize_stack(
+-    stack_pointer_t *stacktop,
++        stack_pointer_t *stacktop,
+     proc_t body_proc,
+     arg_t body_arg,
+     proc_t finally_proc,
+diff -rupN ../1/release/machineprimitives.h release/machineprimitives.h
+--- ../1/release/machineprimitives.h	2015-09-20 16:33:52.000000000 -0400
++++ release/machineprimitives.h	2015-09-20 16:33:52.000000000 -0400
+@@ -11,7 +11,7 @@
+ #ifndef __MINITHREAD_PUBLIC_H_
+ #define __MINITHREAD_PUBLIC_H_
+ 
+-#include <stdint.h>
++#include "inttypes.h"
+ #include "defs.h"
+ 
+ typedef void *stack_pointer_t;
+@@ -34,7 +34,8 @@ typedef int (*proc_t)(arg_t); /* generic
+  *  |  stackbase    |  <- bottom of stack.
+  *  -----------------
+  */
+-void minithread_allocate_stack(stack_pointer_t *stackbase,
++
++extern void minithread_allocate_stack(stack_pointer_t *stackbase,
+                                       stack_pointer_t *stacktop);
+ 
+ /*
+@@ -43,7 +44,7 @@ void minithread_allocate_stack(stack_poi
+  * Frees the stack at stackbase.  Care should be taken to ensure that the stack
+  * is not in use when it is freed.
+  */
+-void minithread_free_stack(stack_pointer_t stackbase);
++extern void minithread_free_stack(stack_pointer_t stackbase);
+ 
+ /*
+  *  Initialize the stackframe pointed to by *stacktop so that
+@@ -61,16 +62,16 @@ void minithread_free_stack(stack_pointer
+  *  This procedure changes the value of *stacktop.
+  *
+  */
+-void minithread_initialize_stack(stack_pointer_t *stacktop,
++extern void minithread_initialize_stack(stack_pointer_t *stacktop,
+ 
+-                                 proc_t body_proc,
+-                                 arg_t  body_arg,
++                                        proc_t body_proc,
++                                        arg_t  body_arg,
+ 
+-                                 proc_t final_proc,
+-                                 arg_t  final_arg);
++                                        proc_t final_proc,
++                                        arg_t  final_arg);
+ 
+ 
+-void minithread_trampoline(proc_t interrupt, void * arg);
++extern void minithread_trampoline(proc_t interrupt, void * arg);
+ 
+ /* SYNCHRONIZATION PRIMITIVES */
+ 
+@@ -84,26 +85,26 @@ void minithread_trampoline(proc_t interr
+  * the machine registers that were saved on the new thread's stack previously,
+  * and thus resume the new thread from where it left off.
+  */
+-void minithread_switch(stack_pointer_t *old_thread_sp,
+-                       stack_pointer_t *new_thread_sp);
++extern void minithread_switch(stack_pointer_t *old_thread_sp,
++                              stack_pointer_t *new_thread_sp);
+ 
+ /* SYNCHRONIZATION PRIMITIVES */
+ 
+ /*
+  *  Atomically test and set the value at l to 1.  Return old value.
+  */
+-int atomic_test_and_set(tas_lock_t *l);
++extern int atomic_test_and_set(tas_lock_t *l);
+ 
+ /*
+  *  Atomically set the value at l to 0.
+  */
+-void atomic_clear(tas_lock_t *l);
++extern void atomic_clear(tas_lock_t *l);
+ 
+ /*
+  * Atomically set the value pointed to be x to be newval, and return
+  * the old value of x.
+  */
+-int swap(int* x, int newval);
++extern int swap(int* x, int newval);
+ 
+ /*
+  * Atomic compare and swap.
+@@ -111,7 +112,7 @@ int swap(int* x, int newval);
+  * newval; regardless of the result of the comparison, return the original
+  * value of *x.
+  */
+-int compare_and_swap(int* x, int oldval, int newval);
++extern int compare_and_swap(int* x, int oldval, int newval);
+ 
+ /*
+  * Returns the current time in milliseconds
+diff -rupN ../1/release/minithread.c release/minithread.c
+--- ../1/release/minithread.c	2015-09-20 16:33:52.000000000 -0400
++++ release/minithread.c	2015-09-20 16:33:52.000000000 -0400
+@@ -9,6 +9,7 @@
+  */
+ #include <stdlib.h>
+ #include <stdio.h>
++#include "interrupts.h"
+ #include "minithread.h"
+ #include "queue.h"
+ #include "synch.h"
+@@ -58,8 +59,40 @@ void
+ minithread_yield() {
+ }
+ 
++/*
++ * This is the clock interrupt handling routine.
++ * You have to call minithread_clock_init with this
++ * function as parameter in minithread_system_initialize
++ */
++void 
++clock_handler(void* arg)
++{
++
++}
++
++/*
++ * Initialization.
++ *
++ *      minithread_system_initialize:
++ *       This procedure should be called from your C main procedure
++ *       to turn a single threaded UNIX process into a multithreaded
++ *       program.
++ *
++ *       Initialize any private data structures.
++ *       Create the idle thread.
++ *       Fork the thread which should call mainproc(mainarg)
++ *       Start scheduling.
++ *
++ */
+ void
+ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
+ }
+ 
++/*
++ * sleep with timeout in milliseconds
++ */
++void 
++minithread_sleep_with_timeout(int delay)
++{
+ 
++}
+\ No newline at end of file
+diff -rupN ../1/release/minithread.h release/minithread.h
+--- ../1/release/minithread.h	2015-09-20 16:33:52.000000000 -0400
++++ release/minithread.h	2015-09-20 16:33:52.000000000 -0400
+@@ -96,10 +96,10 @@ void minithread_system_initialize(proc_t
+ void minithread_unlock_and_stop(tas_lock_t* lock);
+ 
+ /*
+- * sleep with timeout in microseconds
++ * minithread_sleep_with_timeout(int delay)
++ *      Put the current thread to sleep for [delay] milliseconds
+  */
+ void minithread_sleep_with_timeout(int delay);
+ 
+ 
+-#endif /*__MINITHREAD_H__*/
+-
++#endif /*__MINITHREAD_H__*/
+\ No newline at end of file
+diff -rupN ../1/release/multilevel_queue.c release/multilevel_queue.c
+--- ../1/release/multilevel_queue.c	1969-12-31 19:00:00.000000000 -0500
++++ release/multilevel_queue.c	2015-09-20 16:33:52.000000000 -0400
+@@ -0,0 +1,48 @@
++/*
++ * Multilevel queue manipulation functions  
++ */
++#include "multilevel_queue.h"
++#include <stdlib.h>
++#include <stdio.h>
++
++/*
++ * Returns an empty multilevel queue with number_of_levels levels.
++ * Returns NULL on error.
++ */
++multilevel_queue_t* multilevel_queue_new(int number_of_levels)
++{
++
++	return NULL;
++}
++
++/*
++ * Appends a void* to the multilevel queue at the specified level.
++ * Return 0 (success) or -1 (failure).
++ */
++int multilevel_queue_enqueue(multilevel_queue_t* queue, int level, void* item)
++{
++
++	return -1;
++}
++
++/*
++ * Dequeue and return the first void* from the multilevel queue starting at the specified level. 
++ * Levels wrap around so as long as there is something in the multilevel queue an item should be returned.
++ * Return the level that the item was located on and that item.
++ * If the multilevel queue is empty, return -1 (failure) with a NULL item.
++ */
++int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
++{
++
++	return -1;
++}
++
++/* 
++ * Free the queue and return 0 (success) or -1 (failure).
++ * Do not free the queue nodes; this is the responsibility of the programmer.
++ */
++int multilevel_queue_free(multilevel_queue_t* queue)
++{
++
++	return -1;
++}
+diff -rupN ../1/release/multilevel_queue.h release/multilevel_queue.h
+--- ../1/release/multilevel_queue.h	1969-12-31 19:00:00.000000000 -0500
++++ release/multilevel_queue.h	2015-09-20 16:33:52.000000000 -0400
+@@ -0,0 +1,42 @@
++/*
++ * Multilevel queue manipulation functions  
++ */
++#ifndef __MULTILEVEL_QUEUE_H__
++#define __MULTILEVEL_QUEUE_H__
++
++#include "queue.h"
++
++/*
++ * multilevel_queue_t is a pointer to an internally maintained data structure.
++ * Clients of this package do not need to know how the queues are
++ * represented. They see and manipulate only multilevel_queue_t's. 
++ */
++typedef struct multilevel_queue multilevel_queue_t;
++
++/*
++ * Returns an empty multilevel queue with number_of_levels levels.
++ * Returns NULL on error.
++ */
++multilevel_queue_t* multilevel_queue_new(int number_of_levels);
++
++/*
++ * Appends a void* to the multilevel queue at the specified level.
++ * Return 0 (success) or -1 (failure).
++ */
++int multilevel_queue_enqueue(multilevel_queue_t* queue, int level, void* item);
++
++/*
++ * Dequeue and return the first void* from the multilevel queue starting at the specified level. 
++ * Levels wrap around so as long as there is something in the multilevel queue an item should be returned.
++ * Return the level that the item was located on and that item.
++ * If the multilevel queue is empty, return -1 (failure) with a NULL item.
++ */
++int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item);
++
++/* 
++ * Free the queue and return 0 (success) or -1 (failure).
++ * Do not free the queue nodes; this is the responsibility of the programmer.
++ */
++int multilevel_queue_free(multilevel_queue_t* queue);
++
++#endif /*__MULTILEVEL_QUEUE_H__*/
+diff -rupN ../1/release/sieve.c release/sieve.c
+--- ../1/release/sieve.c	2015-09-20 16:33:52.000000000 -0400
++++ release/sieve.c	2015-09-23 21:07:54.000000000 -0400
+@@ -12,7 +12,6 @@
+  */
+ #include <stdlib.h>
+ #include <stdio.h>
+-#include <stdbool.h>
+ #include "minithread.h"
+ #include "synch.h"
+ 
+@@ -20,8 +19,8 @@
+ 
+ typedef struct {
+   int value;
+-  semaphore_t *produce;
+-  semaphore_t *consume;
++  semaphore_t* produce;
++  semaphore_t* consume;
+ } channel_t;
+ 
+ typedef struct {
+@@ -81,7 +80,7 @@ int sink(int* arg) {
+ 
+   minithread_fork(source, (int *) p);
+   
+-  while(true) {
++  for (;;) {
+     filter_t* f;
+ 
+     semaphore_P(p->consume);
+diff -rupN ../1/release/submission.txt release/submission.txt
+--- ../1/release/submission.txt	2015-09-15 23:42:22.000000000 -0400
++++ release/submission.txt	1969-12-31 19:00:00.000000000 -0500
+@@ -1,7 +0,0 @@
+-Name 1:
+-NetID 1:
+-
+-Name 2:
+-NetID 2:
+-
+-Comments (optional):
+diff -rupN ../1/release/synch.c release/synch.c
+--- ../1/release/synch.c	2015-09-20 16:33:52.000000000 -0400
++++ release/synch.c	2015-09-23 21:07:54.000000000 -0400
+@@ -23,18 +23,41 @@ struct semaphore {
+ };
+ 
+ 
++/*
++ * semaphore_t semaphore_create()
++ *      Allocate a new semaphore.
++ */
+ semaphore_t* semaphore_create() {
+-    return NULL;
++    return (semaphore_t* )0;
+ }
+ 
+-void semaphore_destroy(semaphore_t *sem) {
++/*
++ * semaphore_destroy(semaphore_t sem);
++ *      Deallocate a semaphore.
++ */
++void semaphore_destroy(semaphore_t* sem) {
+ }
+ 
+-void semaphore_initialize(semaphore_t *sem, int cnt) {
++
++/*
++ * semaphore_initialize(semaphore_t sem, int cnt)
++ *      initialize the semaphore data structure pointed at by
++ *      sem with an initial value cnt.
++ */
++void semaphore_initialize(semaphore_t* sem, int cnt) {
+ }
+ 
+-void semaphore_P(semaphore_t *sem) {
++
++/*
++ * semaphore_P(semaphore_t sem)
++ *      P on the sempahore.
++ */
++void semaphore_P(semaphore_t* sem) {
+ }
+ 
+-void semaphore_V(semaphore_t *sem) {
++/*
++ * semaphore_V(semaphore_t sem)
++ *      V on the sempahore.
++ */
++void semaphore_V(semaphore_t* sem) {
+ }
+diff -rupN ../1/release/synch.h release/synch.h
+--- ../1/release/synch.h	2015-09-20 16:33:52.000000000 -0400
++++ release/synch.h	2015-09-23 00:50:29.000000000 -0400
+@@ -24,26 +24,27 @@ semaphore_t* semaphore_create();
+  * semaphore_destroy(semaphore_t sem);
+  *  Deallocate a semaphore.
+  */
+-void semaphore_destroy(semaphore_t *sem);
++void semaphore_destroy(semaphore_t* sem);
+ 
+ /*
+  * semaphore_initialize(semaphore_t sem, int cnt)
+  *  initialize the semaphore data structure pointed at by
+  *  sem with an initial value cnt.
+  */
+-void semaphore_initialize(semaphore_t *sem, int cnt);
++void semaphore_initialize(semaphore_t* sem, int cnt);
++
+ 
+ /*
+  * semaphore_P(semaphore_t sem)
+  *  P on the sempahore.
+  */
+-void semaphore_P(semaphore_t *sem);
++void semaphore_P(semaphore_t* sem);
+ 
+ /*
+  * semaphore_V(semaphore_t sem)
+  *  V on the sempahore.
+  */
+-void semaphore_V(semaphore_t *sem);
++void semaphore_V(semaphore_t* sem);
+ 
+ 
+ #endif /*__SYNCH_H__*/
+diff -rupN ../1/release/test3.c release/test3.c
+--- ../1/release/test3.c	2015-09-20 16:33:52.000000000 -0400
++++ release/test3.c	2015-09-23 21:07:54.000000000 -0400
+@@ -10,11 +10,12 @@
+ #include <stdlib.h>
+ 
+ 
+-semaphore_t *sem1 = NULL;
+-semaphore_t *sem2 = NULL;
++semaphore_t* sem1;
++semaphore_t* sem2;
+ int x = 0;
+ 
+ int thread2(int* arg) {
++
+   while (x < 20) {
+     printf("Thread 2, x = %d.\n", x++);
+     semaphore_V(sem1);
+@@ -42,10 +43,6 @@ main(int argc, char *argv[]) {
+   semaphore_initialize(sem1, 0);
+   sem2 = semaphore_create();
+   semaphore_initialize(sem2, 0);
+-
+   minithread_system_initialize(thread1, NULL);
+-
+-  semaphore_destroy(sem1);
+-  semaphore_destroy(sem2);
+-  return 0;
++  return -1;
+ }
