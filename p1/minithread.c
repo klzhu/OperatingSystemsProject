@@ -16,6 +16,7 @@
 #include "synch.h"
 #include "machineprimitives.h"
 #include "defs.h"
+#include "interrupts.h"
 #include <assert.h>
 #include <stdbool.h>
 
@@ -285,5 +286,43 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread
+}
+
+/*
+ * This is the clock interrupt handling routine.
+ * You have to call minithread_clock_init with this
+ * function as parameter in minithread_system_initialize
+ */
+void 
+clock_handler(void* arg)
+{
+
+}
+
+/*
+ * Initialization.
+ *
+ *      minithread_system_initialize:
+ *       This procedure should be called from your C main procedure
+ *       to turn a single threaded UNIX process into a multithreaded
+ *       program.
+ *
+ *       Initialize any private data structures.
+ *       Create the idle thread.
+ *       Fork the thread which should call mainproc(mainarg)
+ *       Start scheduling.
+ *
+ */
+void
+minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
+}
+
+/*
+ * sleep with timeout in milliseconds
+ */
+void 
+minithread_sleep_with_timeout(int delay)
+{
+
 }
 

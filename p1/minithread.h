@@ -96,10 +96,10 @@ void minithread_system_initialize(proc_t mainproc, arg_t mainarg);
 void minithread_unlock_and_stop(tas_lock_t* lock);
 
 /*
- * sleep with timeout in microseconds
+ * minithread_sleep_with_timeout(int delay)
+ *      Put the current thread to sleep for [delay] milliseconds
  */
 void minithread_sleep_with_timeout(int delay);
 
 
 #endif /*__MINITHREAD_H__*/
-

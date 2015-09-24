@@ -11,7 +11,7 @@
 #ifndef __MINITHREAD_PUBLIC_H_
 #define __MINITHREAD_PUBLIC_H_
 
-#include <stdint.h>
+#include "inttypes.h"
 #include "defs.h"
 
 typedef void *stack_pointer_t;
@@ -34,7 +34,8 @@ typedef int (*proc_t)(arg_t); /* generic function pointer */
  *  |  stackbase    |  <- bottom of stack.
  *  -----------------
  */
-void minithread_allocate_stack(stack_pointer_t *stackbase,
+
+extern void minithread_allocate_stack(stack_pointer_t *stackbase,
                                       stack_pointer_t *stacktop);
 
 /*
@@ -43,7 +44,7 @@ void minithread_allocate_stack(stack_pointer_t *stackbase,
  * Frees the stack at stackbase.  Care should be taken to ensure that the stack
  * is not in use when it is freed.
  */
-void minithread_free_stack(stack_pointer_t stackbase);
+extern void minithread_free_stack(stack_pointer_t stackbase);
 
 /*
  *  Initialize the stackframe pointed to by *stacktop so that
@@ -61,16 +62,16 @@ void minithread_free_stack(stack_pointer_t stackbase);
  *  This procedure changes the value of *stacktop.
  *
  */
-void minithread_initialize_stack(stack_pointer_t *stacktop,
+extern void minithread_initialize_stack(stack_pointer_t *stacktop,
 
-                                 proc_t body_proc,
-                                 arg_t  body_arg,
+                                        proc_t body_proc,
+                                        arg_t  body_arg,
 
-                                 proc_t final_proc,
-                                 arg_t  final_arg);
+                                        proc_t final_proc,
+                                        arg_t  final_arg);
 
 
-void minithread_trampoline(proc_t interrupt, void * arg);
+extern void minithread_trampoline(proc_t interrupt, void * arg);
 
 /* SYNCHRONIZATION PRIMITIVES */
 
@@ -84,26 +85,26 @@ void minithread_trampoline(proc_t interrupt, void * arg);
  * the machine registers that were saved on the new thread's stack previously,
  * and thus resume the new thread from where it left off.
  */
-void minithread_switch(stack_pointer_t *old_thread_sp,
-                       stack_pointer_t *new_thread_sp);
+extern void minithread_switch(stack_pointer_t *old_thread_sp,
+                              stack_pointer_t *new_thread_sp);
 
 /* SYNCHRONIZATION PRIMITIVES */
 
 /*
  *  Atomically test and set the value at l to 1.  Return old value.
  */
-int atomic_test_and_set(tas_lock_t *l);
+extern int atomic_test_and_set(tas_lock_t *l);
 
 /*
  *  Atomically set the value at l to 0.
  */
-void atomic_clear(tas_lock_t *l);
+extern void atomic_clear(tas_lock_t *l);
 
 /*
  * Atomically set the value pointed to be x to be newval, and return
  * the old value of x.
  */
-int swap(int* x, int newval);
+extern int swap(int* x, int newval);
 
 /*
  * Atomic compare and swap.
@@ -111,7 +112,7 @@ int swap(int* x, int newval);
  * newval; regardless of the result of the comparison, return the original
  * value of *x.
  */
-int compare_and_swap(int* x, int oldval, int newval);
+extern int compare_and_swap(int* x, int oldval, int newval);
 
 /*
  * Returns the current time in milliseconds

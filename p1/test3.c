@@ -10,11 +10,12 @@
 #include <stdlib.h>
 
 
-semaphore_t *sem1 = NULL;
-semaphore_t *sem2 = NULL;
+semaphore_t* sem1;
+semaphore_t* sem2;
 int x = 0;
 
 int thread2(int* arg) {
+
   while (x < 20) {
     printf("Thread 2, x = %d.\n", x++);
     semaphore_V(sem1);
@@ -42,10 +43,6 @@ main(int argc, char *argv[]) {
   semaphore_initialize(sem1, 0);
   sem2 = semaphore_create();
   semaphore_initialize(sem2, 0);
-
   minithread_system_initialize(thread1, NULL);
-
-  semaphore_destroy(sem1);
-  semaphore_destroy(sem2);
-  return 0;
+  return -1;
 }

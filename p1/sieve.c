@@ -12,7 +12,6 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 #include "minithread.h"
 #include "synch.h"
 
@@ -20,8 +19,8 @@
 
 typedef struct {
   int value;
-  semaphore_t *produce;
-  semaphore_t *consume;
+  semaphore_t* produce;
+  semaphore_t* consume;
 } channel_t;
 
 typedef struct {
@@ -81,7 +80,7 @@ int sink(int* arg) {
 
   minithread_fork(source, (int *) p);
   
-  while(true) {
+  for (;;) {
     filter_t* f;
 
     semaphore_P(p->consume);

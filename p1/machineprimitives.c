@@ -8,14 +8,17 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
-
 #include "defs.h"
 #include "minithread.h"
 #include "machineprimitives.h"
+#include <sys/mman.h>
 
+/*
+ * Used to initialize a thread's stack for the first context switch
+ * to the thread.  The minithread_root procedure will be run with the
+ * main and final procedures saved on the thread's stack
+ */
 typedef struct initial_stack_state *initial_stack_state_t;
-
 struct initial_stack_state
 {
   void *body_proc;            /* v1 or ebx */
@@ -33,13 +36,22 @@ struct initial_stack_state
   void *rax;
   void *rcx;
   void *rdx;
+#ifdef WINCE
+  int   v5;
+  int   v6;
+  int   sl;
+  int   fp;
+#endif
   void *root_proc;            /* left on stack */
 };
 
-static const int STACK_GROWS_DOWN      = 1;
-static const int STACKSIZE             = (256 * 1024);
-static const int STACKALIGN            = 0xf;
+#define STACK_GROWS_DOWN        1
+#define STACKSIZE               (256 * 1024)
+#define STACKALIGN              0xf
 
+/*
+ * Allocate a new stack.
+ */
 void
 minithread_allocate_stack(stack_pointer_t *stackbase, stack_pointer_t *stacktop)
 {
@@ -58,6 +70,11 @@ minithread_allocate_stack(stack_pointer_t *stackbase, stack_pointer_t *stacktop)
     }
 }
 
+/*
+ * Free a stack.
+ *
+ * The stack cannot be used after this call.
+ */
 void
 minithread_free_stack(stack_pointer_t stackbase)
 {
@@ -69,9 +86,16 @@ minithread_free_stack(stack_pointer_t stackbase)
  */
 extern int minithread_root();
 
+/*
+ * Initialize a stack.
+ *      Stack frame is set up so that thread calls:
+ *              initial_proc(initial_arg);
+ *              body_proc(body_arg);
+ *              finally_proc(finally_arg);
+ */
 void
 minithread_initialize_stack(
-    stack_pointer_t *stacktop,
+        stack_pointer_t *stacktop,
     proc_t body_proc,
     arg_t body_arg,
     proc_t finally_proc,
