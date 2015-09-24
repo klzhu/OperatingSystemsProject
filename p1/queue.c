@@ -78,8 +78,8 @@ queue_append(queue_t *queue, void* item) {
 
 int
 queue_dequeue(queue_t *queue, void** item) {
-	//our queue is empty
-	if (queue->length == 0 || queue == NULL)
+	//our queue is empty, if our queue is NULL, or the item is NULL, return -1
+	if (queue->length == 0 || queue == NULL || item == NULL)
 	{
 		*item = NULL;
 		return -1;
