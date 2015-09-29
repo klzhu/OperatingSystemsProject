@@ -123,19 +123,11 @@ queue_iterate(queue_t *queue, func_t f, void* item) {
 
 int
 queue_free(queue_t *queue) {
-	//if queue is empty or null
-	if (queue == NULL) return 0;
-
-	node* curr = queue->head;
-	while (curr != NULL)
-	{
-		node* tempNext = curr->next;
-		free(curr);
-		curr = tempNext;
-	}
-
+	//if queue is null or non empty, return -1
+	if (queue == NULL || queue->length != 0) return -1;
+	
+	//otherwise, free queue and return 0
 	free(queue);
-
 	return 0;
 }
 

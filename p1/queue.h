@@ -45,8 +45,9 @@ typedef void (*func_t)(void*, void*);
 int queue_iterate(queue_t*, func_t, void*);
 
 /*
- * Free the queue and return 0 (success) or -1 (failure).
- */
+* Free the queue and return 0 (success) or -1 (failure).
+* Failure cases include NULL queue and non-empty queue.
+*/
 int queue_free (queue_t*);
 
 /*
