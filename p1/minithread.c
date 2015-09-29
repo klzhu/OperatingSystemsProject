@@ -267,7 +267,7 @@ minithread_yield() {
 void 
 clock_handler(void* arg)
 {
-	printf("interrupted\n");
+	printf("interrupt\n");
 }
 
 /*
