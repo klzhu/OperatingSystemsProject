@@ -118,7 +118,7 @@ int idle_thread_method(arg_t arg){
 
 
 // ---- minithread ----
-minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* whichQueue);
+minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* whichQueue)
 {
 	if (proc == NULL) return NULL;
 
@@ -268,9 +268,9 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_threadIdCounter = 0;
 
 	//the following threads will not be in any queue
-	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, 0); AbortGracefully(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
-	g_idleThread = minithread_create_helper(idle_thread_method, NULL, 0); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
-	g_runningThread = minithread_create_helper(mainproc, mainarg, 0); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
+	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, READY, NULL); AbortGracefully(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
+	g_idleThread = minithread_create_helper(idle_thread_method, NULL, READY, NULL); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
+	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
