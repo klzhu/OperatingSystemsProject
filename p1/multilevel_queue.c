@@ -5,14 +5,34 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/* multilevel queue
+ * 0 - student
+ * 1 - batch
+ * 2 - interrupts?
+ * 3 - system
+ */
+
+struct multilevel_queue {
+	queue_t** queues[];
+	int num_levels;
+};
+
 /*
  * Returns an empty multilevel queue with number_of_levels levels.
  * Returns NULL on error.
  */
 multilevel_queue_t* multilevel_queue_new(int number_of_levels)
 {
-
-	return NULL;
+	//needs wrapped in error catch
+	multilevel_queue_t* ret = (multilevel_queue_t*)malloc(sizeof(multilevel_queue_t));
+	ret->num_levels = number_of_levels;
+	queue_t** queues[number_of_levels];
+	ret->queues = queues;
+	int x;
+	for (x = 0; x < number_of_levels; x++) {
+		ret->queues[x] = queue_new();
+	}
+	return ret;
 }
 
 /*
