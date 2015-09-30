@@ -28,13 +28,8 @@
  * that you feel they must have.
  */
 
- //If condition, fail gracefully and give error message
-#define AbortGracefully(cond,message)                       \
-    if (cond) {                                              \
-        printf("Abort: %s:%d, MSG:%s\n",                  \
-               __FILE__, __LINE__, message); \
-        exit(1);                                             \
-    }
+//Clock interrupt period, which is set to 100ms in our case
+const int INTERRUPT_PERIOD = 100 * MILLISECOND;
 
 //----- Global Variables ------
 minithread_t* g_runningThread = NULL; //points to currently running thread
@@ -58,26 +53,27 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
 
 
  //   -----   Private helper functions  -----  
- // This function performs minithread_fork() or minithread_create() depending on int whichQueue
- // and also creates special threads that won't be added to any queue
- //cases:  whichQueue == 0:	the thread's status is set to READY and is not inserted into any queue 
- //				 1: the thread's status is set to READY and is inserted into run queue
- //			     2:	the thread's status is set to WAIT and is not inserted into any queue
- minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue);
+ // This function performs minithread_fork() or minithread_create().
+ // It takes in the thread state and the queue the thread should be added to as input
+ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* whichQueue);
 
- // This function does same as minithread_yield() except the calling thread is inserted into a queue as follows
- // whichQueue == 0:	the thread's status is set to runnable and is not inserted into any queue 
- //				 1: the thread's status is set to runnable and is inserted into ready queue
- //				 2:	the thread's status is set to wait and is not inserted into any queue
- //				 3: the thread's status is set to done and is inserted into done Queue
- void minithread_scheduler(int whichQueue);
+ //This function returns true if the thread is either the idle or reaper thread, which should not be in a queue
+ bool is_idle_or_reaper(minithread_t* mt) {
+	 return (mt == g_idleThread || mt == g_reaperThread);
+ }
+
+ // This function does same as minithread_yield() and minithread_stop.
+// It takes in the thread state and the queue the thread should be added to as input
+ void minithread_yield_helper(thread_state status, queue_t* whichQueue);
 
 /* minithread functions */
 
 //final proc that is called after the body proc for a thread is done running
  int cleanup_proc(arg_t arg){
+	 assert(is_idle_or_reaper(minithread_self()) == false); //idle and reaper thread should never end
+
 	 while(1){ 	 //final_proc should not return
-        minithread_scheduler(3); //scheduler will set calling thread to done and put it on zombie queue and yield
+        minithread_yield_helper(DONE, g_zombieQueue); //scheduler will set calling thread to done and put it on zombie queue and yield
 	 }
 
 	 return -1; //should never return
@@ -100,7 +96,7 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
 			 free(threadToClean);
 		 }
 
-		 minithread_scheduler(0); //case 0: the thread is set to runnable and is not inserted into any queue
+		 minithread_yield(); //yield process to another thread
 	 }
 
 	 return -1; //should never return
@@ -114,7 +110,7 @@ int idle_thread_method(arg_t arg){
 	{
 		while (queue_length(g_runQueue) == 0); //if there are no threads in run queue to run, loop
 		
-		minithread_scheduler(0); // the thread is set to runnable and is not inserted into any queue
+		minithread_yield(); // yield process to another thread
 	}
 
 	return -1; //should never return
@@ -122,7 +118,7 @@ int idle_thread_method(arg_t arg){
 
 
 // ---- minithread ----
-minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue)
+minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* whichQueue);
 {
 	if (proc == NULL) return NULL;
 
@@ -133,26 +129,11 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue)
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
 	minithread_initialize_stack(&(mt->stacktop), proc, arg, cleanup_proc, NULL);
 
-	queue_t* globalQueueName = NULL; //points to the queue that the thread should be inserted into
-	switch (whichQueue) {
-	case 0: //the thread's status is set to READY and is not inserted into any queue, so leave globalQueueName as NULL 
-		mt->status = READY;
-		break;
-	case 1: //the thread's status is set to READY and is inserted into run queue
-		mt->status = READY;
-		globalQueueName = g_runQueue;
-		break;
-	case 2: //thread status is set to WAIT, not inserted into any queue
-		mt->status = WAIT;
-		break;
-	default:
-		AbortGracefully(1, "Invalid input whichQueue in minithread_create_helper()");
-	}
-
 	mt->threadId = g_threadIdCounter++;
-	if (globalQueueName != NULL) //there is a global queue our thread should be added to
+	mt->status = status; //set the thread's status according to the function input
+	if (whichQueue != NULL) //if thread needs to be added to queue, add it
 	{
-		int appendSuccess = queue_append(globalQueueName, mt);
+		int appendSuccess = queue_append(whichQueue, mt);
 		AbortGracefully(appendSuccess != 0, "Queue_append failed in minithread_create_helper()");
 	}
 
@@ -161,17 +142,17 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, int whichQueue)
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-	return minithread_create_helper(proc, arg, 1); //Case 1: set status to READY and insert into run queue
+	return minithread_create_helper(proc, arg, READY, g_runQueue); //set status to READY, add to run queue
 }
 
 minithread_t*
 minithread_create(proc_t proc, arg_t arg) {
-	return minithread_create_helper(proc, arg, 2); //Case 2: set status to WAIT, not inserted into any queue
+	return minithread_create_helper(proc, arg, WAIT, NULL); //set status to WAIT, not added to any queue, waiting threads handled by application
 }
 
 minithread_t*
 minithread_self() {
-	//if there is no runnin thread currently
+	//if there is no running thread currently
 	if (g_runningThread == NULL) return NULL;
 
 	return g_runningThread;
@@ -185,37 +166,20 @@ minithread_id() {
 	return g_runningThread->threadId;
 }
 
-void minithread_scheduler(int whichQueue)
+void minithread_yield_helper(thread_state status, queue_t* whichQueue)
 {
+	assert(g_runningThread != NULL && mt != NULL && g_runQueue != NULL && g_zombieQueue != NULL);
+
+	set_interrupt_level(DISABLED);
 	minithread_t* mt = minithread_self(); //get calling thread
-	assert(mt == g_runningThread && mt != NULL && g_runQueue != NULL && g_zombieQueue != NULL);
 	assert(mt->status == RUNNING); 
 
-	queue_t* globalQueueName = NULL; //stores which queue thread should be put onto after relinquishing processor
-	switch (whichQueue) {
-	case 0: // the thread is set to runnable and is not inserted into any queue
-		mt->status = READY;
-		break;
-	case 1:	// the thread is set to ready to run and is inserted into ready queue
-		mt->status = READY;
-		globalQueueName = g_runQueue;	// insert to runnable queue
-		break;
-	case 2: // the thread is set to wait and is not inserted into any queue
-		mt->status = WAIT;
-		break;
-	case 3: // the thread is set to done and is inserted into done queue
-		mt->status = DONE;
-		globalQueueName = g_zombieQueue;	// insert to zombie-runnable queue
-		break;
-	default:
-		AbortGracefully(true, "Invalid value for input argument whichQueue in minithread_scheduler()");
-		break;
-	}
-
-	if (globalQueueName != NULL)
+	//set the queue status
+	mt->status = status;
+	if (whichQueue != NULL) //if thread needs to be added to a queue, append it
 	{
-		int appendSuccess = queue_append(globalQueueName, mt);
-		AbortGracefully(appendSuccess != 0, "Queue append error in minithread_scheduler()");
+		int appendSuccess = queue_append(whichQueue, mt);
+		AbortGracefully(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
 	}
 
 	//point g_runningThread to new running thread
@@ -225,7 +189,7 @@ void minithread_scheduler(int whichQueue)
 	{
 		minithread_t* dequeuedThread = NULL;
 		int dequeueSuccess = queue_dequeue(g_runQueue, (void**)&dequeuedThread); //cast dequeuedThread to a void pointer
-		AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in minithread_scheduler()");
+		AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in minithread_yield_helper()");
 		assert(dequeuedThread != NULL && dequeuedThread->status == READY);
 		g_runningThread = dequeuedThread;
 	}
@@ -237,8 +201,10 @@ void minithread_scheduler(int whichQueue)
 }
 
 void
-minithread_stop() { //gives up processor, not inserted into any queue (case 2)
-	minithread_scheduler(2); 
+minithread_stop() {
+	//yield processor, set status to WAIT, and don't add thread to any queue
+	assert(is_idle_or_reaper(minithread_self()) == false); //idle and reaper threads should never have the WAIT status
+	minithread_yield_helper(WAIT, NULL); 
 }
 
 void
@@ -252,11 +218,13 @@ minithread_start(minithread_t *t) {
 	AbortGracefully(appendSuccess != 0, "Queue_append error in minithread_start()");
 }
 
+/*Forces the caller to relinquish the processor and be put to the end of
+the ready queue.  Allows another thread to run. */
 void
 minithread_yield() {	
-	/*Forces the caller to relinquish the processor and be put to the end of
-    the ready queue.  Allows another thread to run. */
-	minithread_scheduler(1); //yields processor and is put onto run queue (case 1)
+	//if idle or reaper thread, don't add to any queue, otherwise, add to run queue
+	queue_t* whichQueue = is_idle_or_reaper(minithread_self()) ? NULL : g_runQueue;
+	minithread_yield_helper(READY, whichQueue);
 }
 
 /*
@@ -267,7 +235,9 @@ minithread_yield() {
 void 
 clock_handler(void* arg)
 {
-	printf("interrupt\n");
+	set_interrupt_level(DISABLED); //disable interrupts while we're in interrupt handler
+	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id());
+	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
 }
 
 /*
@@ -297,7 +267,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 
 	g_threadIdCounter = 0;
 
-	//the following threads will not be in any queue, which is denoted by case 0 in minithread_create_helper
+	//the following threads will not be in any queue
 	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, 0); AbortGracefully(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
 	g_idleThread = minithread_create_helper(idle_thread_method, NULL, 0); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
 	g_runningThread = minithread_create_helper(mainproc, mainarg, 0); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
@@ -305,7 +275,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
 
-	minithread_clock_init(100, clock_handler); //install interrupt service
+	minithread_clock_init(INTERRUPT_PERIOD, clock_handler); //install interrupt service with our interrupt period of 100ms
 
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
 }

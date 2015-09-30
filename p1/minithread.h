@@ -13,6 +13,13 @@
 
 #include "machineprimitives.h"
 
+ /* Macro to fail gracefully. If condition, fail and give error message */
+#define AbortGracefully(cond,message)                      	\
+    if (cond) {                                             \
+        printf("Abort: %s:%d, MSG:%s\n",                  	\
+               __FILE__, __LINE__, message); 				\
+        exit(1);                                             \
+    }
 
 /*
  * struct minithread:
