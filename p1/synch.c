@@ -9,18 +9,11 @@
 #include "synch.h"
 #include "queue.h"
 #include "minithread.h"
+#include "interrupts.h"
 
 /*
  *      You must implement the procedures and types defined in this interface.
  */
-
- //If condition, fail gracefully and give error message
-#define AbortGracefully(cond,message)                      	\
-    if (cond) {                                             \
-        printf("Abort: %s:%d, MSG:%s\n",                  	\
-               __FILE__, __LINE__, message); 				\
-        exit(1);                                             \
-    }
 
 /*
  * Semaphores.
@@ -51,9 +44,15 @@ void semaphore_destroy(semaphore_t *sem) {
 	if (sem == NULL) return;
 
 	assert(sem->semaWaitQ != NULL); //sanity check
+
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interruption
+
+	//critical section
 	int freeQueueSuccess = queue_free(sem->semaWaitQ); //release waiting queue
 	AbortGracefully(freeQueueSuccess != 0, "Free Queue failed in semaphore_destroy()");
 	free(sem); //release semaphore
+
+	set_interrupt_level(old_level); //restore interruption level
 }
 
 void semaphore_initialize(semaphore_t *sem, int cnt) {
@@ -61,10 +60,14 @@ void semaphore_initialize(semaphore_t *sem, int cnt) {
 	AbortGracefully(sem == NULL, "Null argument sem in semaphore_initialize()");
 	AbortGracefully(cnt < 0, "Invalid argument cnt seen in semaphore_initialize()");
 
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts
+
 	//critical section
 	sem->count = cnt;
 	assert(sem->semaWaitQ != NULL); //sanity checks
 	assert(sem->count == cnt);
+
+	set_interrupt_level(old_level); //restore interrupts
 }
 
 void semaphore_P(semaphore_t *sem) {
@@ -73,10 +76,10 @@ void semaphore_P(semaphore_t *sem) {
 
 	assert(sem->semaWaitQ != NULL); //sanity check
 
-	if (sem->count > 0)
-	{
-		sem->count--;
-	}
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts
+
+	//critical section
+	if (sem->count > 0) sem->count--;
 	else
 	{
 		minithread_t* currThread = minithread_self(); //get the calling thread
@@ -85,6 +88,7 @@ void semaphore_P(semaphore_t *sem) {
 
 		minithread_stop(); //block calling thread, yield processor
 	}
+	set_interrupt_level(old_level); //restore interrupt level
 }
 
 void semaphore_V(semaphore_t *sem) {
@@ -93,6 +97,9 @@ void semaphore_V(semaphore_t *sem) {
 
 	assert(sem->semaWaitQ != NULL);
 
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts
+
+	//critical section
 	if (queue_length(sem->semaWaitQ) == 0) sem->count++;
 	else
 	{
@@ -106,4 +113,5 @@ void semaphore_V(semaphore_t *sem) {
 		
 		minithread_start(t);
 	}
+	set_interrupt_level(old_level); //restore interrupts
 }
