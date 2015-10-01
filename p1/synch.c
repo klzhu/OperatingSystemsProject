@@ -49,8 +49,8 @@ semaphore_t* semaphore_create() {
 }
 
 void semaphore_destroy(semaphore_t *sem) {
-	if (sem == NULL) return;
-
+	//Validate input arguments, abort if invalid argument is seen
+	AbortGracefully(sem == NULL, "Null argument sem in semaphore_destroy()");
 	assert(sem->semaWaitQ != NULL); //sanity check
 
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interruption
