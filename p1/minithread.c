@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "minithread.h"
 #include "queue.h"
@@ -290,6 +291,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_zombieQueue = queue_new(); AbortGracefully(g_zombieQueue == NULL, "Failed to initialize g_zombieQueue in minithread_system_initialize()");
 
 	g_threadIdCounter = 0;
+	g_interruptCount = 0;
 
 	//the following threads will not be in any queue
 	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, READY, NULL); AbortGracefully(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
@@ -311,6 +313,9 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
  */
 void 
 minithread_sleep_with_timeout(int delay) {
-	//disable alarm, call register alarm with alarm handler
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
+	int alarmSuccess = alarm_create(delay);
+	AbortGracefully(alarmSuccess == -1, "Failed to create new alarm in minithread_sleep_with_timeout()");
+	set_interrupt_level(old_level); //restore interrupts back to previous level
 }
 

@@ -14,6 +14,14 @@
 typedef void (*alarm_handler_t)(void*);
 typedef void *alarm_id;
 
+/* Initializes the global variables for alarm
+*/
+void alarm_system_initalize();
+
+/* Creates a new alarm with a given delay
+*/
+int alarm_create(int delay);
+
 /* register an alarm to go off in "delay" milliseconds.  Returns a handle to
  * the alarm.
  */

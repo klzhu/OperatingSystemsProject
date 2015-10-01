@@ -13,6 +13,9 @@
 
 #include "machineprimitives.h"
 
+
+extern uint64_t g_interruptCount; //global counter to count how many interrupts has passed. This value should not overflow for years.
+
 /*
  * struct minithread:
  *  This is the key data structure for the thread management package.
