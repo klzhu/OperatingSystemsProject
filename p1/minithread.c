@@ -20,6 +20,14 @@
 #include <assert.h>
 #include <stdbool.h>
 
+ /* Macro to fail gracefully. If condition, fail and give error message */
+#define AbortGracefully(cond,message)                      	\
+    if (cond) {                                             \
+        printf("Abort: %s:%d, MSG:%s\n",                  	\
+               __FILE__, __LINE__, message); 				\
+        exit(1);                                             \
+    }
+
 /*
  * A minithread should be defined either in this file or in a private
  * header file.  Minithreads have a stack pointer with to make procedure
@@ -88,8 +96,11 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
 		 while (queue_length(g_zombieQueue) > 0)
 		 {
 			 minithread_t* threadToClean = NULL;
+
+			 interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts as we remove thread from global zomb queue
 			 int dequeueSuccess = queue_dequeue(g_zombieQueue, (void**)&threadToClean);
 			 AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in reaper_thread_method()");
+			 set_interrupt_level(old_level); //restore interrupt level once we are done
 
 			 assert(dequeueSuccess == 0 && threadToClean != NULL && threadToClean->stackbase != NULL);
 			 minithread_free_stack(threadToClean->stackbase);
@@ -129,6 +140,7 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state stat
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
 	minithread_initialize_stack(&(mt->stacktop), proc, arg, cleanup_proc, NULL);
 
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we enter crit section
 	mt->threadId = g_threadIdCounter++;
 	mt->status = status; //set the thread's status according to the function input
 	if (whichQueue != NULL) //if thread needs to be added to queue, add it
@@ -136,7 +148,7 @@ minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state stat
 		int appendSuccess = queue_append(whichQueue, mt);
 		AbortGracefully(appendSuccess != 0, "Queue_append failed in minithread_create_helper()");
 	}
-
+	set_interrupt_level(old_level); //restore interrupt level as we leave crit section
 	return mt;
 }
 
@@ -168,21 +180,25 @@ minithread_id() {
 
 void minithread_yield_helper(thread_state status, queue_t* whichQueue)
 {
-	assert(g_runningThread != NULL && mt != NULL && g_runQueue != NULL && g_zombieQueue != NULL);
+	assert(g_runningThread != NULL && g_runQueue != NULL && g_zombieQueue != NULL);
 
-	set_interrupt_level(DISABLED);
-	minithread_t* mt = minithread_self(); //get calling thread
-	assert(mt->status == RUNNING); 
+	set_interrupt_level(DISABLED); //disable interrupts as we start manipulating global vars
+
+	//if the running thread is the idle thread and the runQueue is empty, don't context switch
+	if (g_runningThread == g_idleThread && queue_length(g_runQueue) == 0) return;
+
+	minithread_t* yieldingThread = minithread_self(); //get calling thread
+	assert(yieldingThread != NULL && yieldingThread->status == RUNNING);
 
 	//set the queue status
-	mt->status = status;
+	yieldingThread->status = status;
 	if (whichQueue != NULL) //if thread needs to be added to a queue, append it
 	{
-		int appendSuccess = queue_append(whichQueue, mt);
+		int appendSuccess = queue_append(whichQueue, yieldingThread);
 		AbortGracefully(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
 	}
 
-	//point g_runningThread to new running thread
+	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
 	else if (queue_length(g_runQueue) == 0) g_runningThread = g_idleThread; //if no threads left to run, switch to idle thread
 	else
@@ -197,7 +213,7 @@ void minithread_yield_helper(thread_state status, queue_t* whichQueue)
 	//context switch to new running thread
 	assert(g_runningThread != NULL);
 	g_runningThread->status = RUNNING;
-	minithread_switch(&(mt->stacktop), &(g_runningThread->stacktop));
+	minithread_switch(&(yieldingThread->stacktop), &(g_runningThread->stacktop)); //this will reenable interrupts automatically
 }
 
 void
