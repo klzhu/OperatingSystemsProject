@@ -35,7 +35,7 @@ multilevel_queue_t* multilevel_queue_new(int number_of_levels)
 	//queue_t** queues[number_of_levels];
 	//ret->queues = queues;
 	ret->queues = (queue_t**)malloc(sizeof(queue_t*)*number_of_levels);
-	if (ret->queues = NULL)
+	if (ret->queues == NULL)
 	{
 		return NULL;
 	}
