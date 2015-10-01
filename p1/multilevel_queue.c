@@ -14,8 +14,8 @@
  */
 
 struct multilevel_queue {
-	queue_t** queues[]; //NOTE: we want an array of queues, I think this is the way to do it, though we may only need it to be a pointer?
 	int num_levels;
+	queue_t** queues; //NOTE: we want an array of queues, I think this is the way to do it, though we may only need it to be a pointer?
 };
 
 /*
@@ -32,8 +32,13 @@ multilevel_queue_t* multilevel_queue_new(int number_of_levels)
 	}
 	//malloc didn't fail! Do things
 	ret->num_levels = number_of_levels;
-	queue_t** queues[number_of_levels];
-	ret->queues = queues;
+	//queue_t** queues[number_of_levels];
+	//ret->queues = queues;
+	ret->queues = (queue_t**)malloc(sizeof(queue_t*)*number_of_levels);
+	if (ret->queues == NULL)
+	{
+		return NULL;
+	}
 	int x;
 	for (x = 0; x < number_of_levels; x++) {
 		ret->queues[x] = queue_new();
