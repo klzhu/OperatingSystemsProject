@@ -19,71 +19,47 @@
 	}
 
 // ---- Global variables ---- //
+extern const int INTERRUPT_PERIOD_IN_MILLISECONDS; //clock interrupt period in milliseconds
 extern uint64_t g_interruptCount; //global counter to count how many interrupts has passed. This value should not overflow for years.
 extern queue_t* g_alarmsQueue = NULL; //global queue that holds our alarms in sorted order according to when they should be set off
 
 //struct for our alarm
 typedef struct alarm {
 	uint64_t interrupt_to_wake; //tracks at which global interrupt the alarm should go off
-	minithread_t* sleepingThread; //handler to our sleeping thread for this alarm
-	bool hasExecuted; //tracks whether alarm has executed or not
+	void* alarmHandlerArg; //argument to alarm handler
 	alarm_handler_t alarm_handler; //method to execute when alarm goes off
-	//semaphore_t* alarmSem; //semaphore to hold the waiting threads for this alarm
 } alarm_t;
-
-//alarm handler
-int alarm_handler(arg_t arg) {
-	assert(g_alarmsQueue != NULL); //global alarms queue should be initialized
-
-	//handle alarms
-
-	return -1;
-}
-
-alarm_handler_t alarm_get_alarm_handler() {
-	alarm_handler_t alarm_handler = alarm_handler;
-	return alarm_handler;
-}
-
-void alarm_system_initalize() {
-	g_alarmsQueue = queue_new(); AbortGracefully(g_alarmsQueue == NULL, "Failed to initialize alarmsQueue in alarm_system_initalize()");
-}
-
-//creates an alarm given a delay, return 0 if success, return -1
-int alarm_create(int delay) {
-	//Validate input arguments and make sure our global alarms queue has been initialized
-	if (delay < 0 || g_alarmsQueue == NULL) return -1;
-
-	alarm_handler_t alarm_handler = alarm_get_alarm_handler();
-	alarm_id newAlarm = register_alarm(delay, alarm_handler, NULL);
-	if (newAlarm == NULL) return -1; //if our register_alarm returned NULL, return error status
-	
-	//add new alarm to global alarms queue, return error status if failed
-	int appendSuccess = queue_append(g_alarmsQueue, newAlarm);
-	if (appendSuccess == -1) return -1;
-
-	return 0;
-}
-
 
 /* see alarm.h */
 alarm_id
 register_alarm(int delay, alarm_handler_t alarm, void *arg) {
 	//if delay period is invalid or alarm is null, return NULL
 	if (delay < 0 || alarm == NULL) return NULL;
-	assert(g_interruptCount >= 0); 
     
 	alarm_t* newAlarm = malloc(sizeof(alarm_t)); //create a new alarm
 	if (alarm == NULL) return NULL; //return NULL if malloc errored
 
 	newAlarm->alarm_handler = alarm;
-	newAlarm->hasExecuted = false;
-	newAlarm->sleepingThread = minithread_self(); //add the calling thread to the alarm
+	newAlarm->alarmHandlerArg = arg; 
 
 	//calculate at which global interrupt the alarm should go off at, round up so thread sleeps at least that amount
-	uint64_t numInterruptsToSleep = (uint64_t) delay / 100; //divide delay by interrupt period to figure out how many ticks to sleep
-	if (delay % 100 != 0) numInterruptsToSleep++; //add 1 tick if our delay was longer than 1 period
+	uint64_t numInterruptsToSleep = (delay + INTERRUPT_PERIOD_IN_MILLISECONDS - 1) / INTERRUPT_PERIOD_IN_MILLISECONDS; // # of interrupts, round up to higher int
 	newAlarm->interrupt_to_wake = g_interruptCount + numInterruptsToSleep;
+
+	//if this is first alarm being added, initialize alarms queue
+	if (g_alarmsQueue == NULL) {
+		g_alarmsQueue = queue_new();
+		AbortGracefully(g_alarmsQueue == NULL, "Failed to initialize alarms queue in register_alarm()");
+	}
+
+	//insert alarm into global alarms queue
+	int insertSuccess = queue_ordered_insert(g_alarmsQueue, newAlarm, ((alarm_t*)newAlarm)->interrupt_to_wake);
+	if (insertSuccess != 0) { //insertion failed, free alarm and set newAlarm = NULL so we return NULL
+		free(newAlarm);
+		newAlarm = NULL;
+	}
+
+	return newAlarm;
 
 	return newAlarm;
 }
@@ -94,17 +70,36 @@ deregister_alarm(alarm_id alarm) {
 	AbortGracefully(alarm == NULL, "Invalid input alarm in deregister_alarm()");
 	assert(g_alarmsQueue != NULL);
 
-	alarm_id alarmFound = NULL;
-	bool alarmExecuted = false;
-	queue_search(g_alarmsQueue, alarm, &alarmFound);
-	
-	if (alarmFound == NULL) return -1; //we didn't find the alarm
-	else alarmExecuted = ((alarm_t*)alarmFound)->hasExecuted;
+	int alarmExecuted = queue_delete(g_alarmsQueue, alarm); //if alarm has executed, it would not be in the queue and queue_delete would return -1.
+	return (alarmExecuted == -1); //return 1 if alarm has been excuted, 0 otherwise
+}
 
-	int deletionSuccess = queue_delete(g_alarmsQueue, alarm);
-	AbortGracefully(deletionSuccess == -1, "queue_delete failed in deregister_alarm()");
-    
-	return (alarmExecuted); //return 1 if alarm has been excuted, 0 otherwise
+/* Checks the alarms and sets off those scheduled to go off.
+* Returns 0 if successful, -1 if any errors
+*/
+int 
+alarm_check_and_run() {
+	//global alarms queue should be initialized
+	assert(g_alarmsQueue != NULL); 
+
+	if (g_alarmsQueue == NULL) return 0; //if alarms queue has not been initialized, no alarms registered yet and nothing to do
+
+	while (queue_length(g_alarmsQueue) > 0) { //while there's an alarm in our queue
+		alarm_t* currAlarm = NULL;
+		int peekSuccess = queue_peek(g_alarmsQueue, (void**)&currAlarm); //peek at the first item in our queue
+		if (peekSuccess == -1) return -1; //peek function failed to view first alarm
+
+		assert(currAlarm != NULL); //self check
+		if (currAlarm->interrupt_to_wake > g_interruptCount) break; //if first alarm in our queue is not set to go off, neither are rest of alarms
+		else { //first alarm is scheduled to go off
+			int dequeueSuccess = queue_dequeue(g_alarmsQueue, (void**)&currAlarm); //remove first alarm from queue
+			if (dequeueSuccess == -1) return -1; //failed to dequeue
+			currAlarm->alarm_handler(currAlarm->alarmHandlerArg); //call alarm's alarm handler
+			free(currAlarm); 
+		}
+	}
+
+	return 0;
 }
 
 /*
