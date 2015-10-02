@@ -22,6 +22,11 @@ void alarm_system_initalize();
 */
 int alarm_create(int delay);
 
+/* Runs any alarms that needs to be ran at the given interrupt count.
+* Returns 0 if successful, -1 if any errors
+*/
+int alarm_run();
+
 /* register an alarm to go off in "delay" milliseconds.  Returns a handle to
  * the alarm.
  */

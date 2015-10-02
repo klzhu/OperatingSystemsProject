@@ -264,6 +264,11 @@ void
 clock_handler(void* arg) {
 	set_interrupt_level(DISABLED); //disable interrupts while we're in interrupt handler
 	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id());
+	
+	g_interruptCount++; //increment interrupt count
+	int alarmRunSuccess = alarm_run(); //run alarms if any
+	AbortGracefully(alarmRunSuccess == -1, "Failed to run alarms in clock_handler()");
+
 	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
 }
 
@@ -318,6 +323,6 @@ minithread_sleep_with_timeout(int delay) {
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
 	int alarmSuccess = alarm_create(delay);
 	AbortGracefully(alarmSuccess == -1, "Failed to create new alarm in minithread_sleep_with_timeout()");
-	set_interrupt_level(old_level); //restore interrupts back to previous level
+	minithread_stop(); //give up processor
 }
 
