@@ -79,9 +79,6 @@ deregister_alarm(alarm_id alarm) {
 */
 int 
 alarm_check_and_run() {
-	//global alarms queue should be initialized
-	assert(g_alarmsQueue != NULL); 
-
 	if (g_alarmsQueue == NULL) return 0; //if alarms queue has not been initialized, no alarms registered yet and nothing to do
 
 	while (queue_length(g_alarmsQueue) > 0) { //while there's an alarm in our queue
