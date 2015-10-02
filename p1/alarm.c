@@ -20,7 +20,7 @@
 
 // ---- Global variables ---- //
 extern uint64_t g_interruptCount; //global counter to count how many interrupts has passed. This value should not overflow for years.
-queue_t* g_alarmsQueue = NULL; //global queue that holds our alarms in sorted order according to when they should be set off
+extern queue_t* g_alarmsQueue = NULL; //global queue that holds our alarms in sorted order according to when they should be set off
 
 //struct for our alarm
 typedef struct alarm {

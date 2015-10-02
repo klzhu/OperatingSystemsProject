@@ -284,7 +284,7 @@ the ready queue.  Allows another thread to run. */
 void
 minithread_yield() {	
 	//if idle or reaper thread, don't add to any queue, otherwise, add to run queue
-	queue_t* whichQueue = is_idle_or_reaper(minithread_self()) ? NULL : g_runQueue;
+	queue_t* whichQueue = is_idle_or_reaper(minithread_self()) ? NULL : g_ml_runQueue;
 	minithread_yield_helper(READY, whichQueue);
 }
 
@@ -298,6 +298,12 @@ clock_handler(void* arg) {
 	set_interrupt_level(DISABLED); //disable interrupts while we're in interrupt handler
 	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id());
 	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
+
+	if (queue_length(g_alarmsQueue) > 0)
+	{
+		//we have pending alarms!
+
+	}
 }
 
 /*
