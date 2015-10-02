@@ -61,12 +61,12 @@ uint64_t g_interruptCount = 0; //global counter to count how many interrupts has
 typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates scheduled to run.
 
  typedef struct minithread {
- 	int threadId;				//JH unique minithread ID
- 	stack_pointer_t stackbase;	//JH pointer to base of thread's stack
- 	stack_pointer_t stacktop;	//JH pointer to top of thread's stack
-	thread_state status;		//JH current thread status
-	int level;					//JH current level within multilevel queue scheduler
-	int quanta;					//JH current quanta left
+ 	int threadId;				//unique minithread ID
+ 	stack_pointer_t stackbase;	//pointer to base of thread's stack
+ 	stack_pointer_t stacktop;	//pointer to top of thread's stack
+	thread_state status;		//current thread status
+	int level;					//current level within multilevel queue scheduler
+	int quanta;					//current quanta left
  } minithread;
 
 
@@ -206,7 +206,7 @@ minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* w
 	minithread_initialize_stack(&(mt->stacktop), proc, arg, cleanup_proc, NULL);
 
 	mt->status = status; //set the thread's status according to the function input
-	mt->level = 0;		//JH set initial level and quanta
+	mt->level = 0;		//set initial level and quanta
 	mt->quanta = 1;
 
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we enter crit section
