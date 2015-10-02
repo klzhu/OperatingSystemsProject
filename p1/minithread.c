@@ -44,18 +44,19 @@
 const int INTERRUPT_PERIOD_IN_MILLISECONDS = 100; // set to 100ms
 
 // ----- Global Variables ------ //
-minithread_t* g_runningThread = NULL; //points to currently running thread
-minithread_t* g_idleThread = NULL; //our idle thread that runs if no threads are left to run
-minithread_t* g_reaperThread = NULL; //thread to clean up threads in the zombie queue
+minithread_t* g_runningThread = NULL;	//points to currently running thread
+minithread_t* g_idleThread = NULL;		//our idle thread that runs if no threads are left to run
+minithread_t* g_reaperThread = NULL;	//thread to clean up threads in the zombie queue
 
-//queue_t* g_runQueue = NULL; //global queue for threads waiting to run
-queue_t* g_zombieQueue = NULL; //global queue for finished threads waiting to be cleaned up
+queue_t* g_runQueue = NULL;			//global queue for threads waiting to run
+queue_t* g_zombieQueue = NULL;		//global queue for finished threads waiting to be cleaned up
 
-multilevel_queue_t* g_ml_runQueue = NULL; //global ml queue for threads waiting to run
+multilevel_queue_t* g_ml_runQueue = NULL;	//global ml queue for threads waiting to run
 
-int g_threadIdCounter = 0; //counter for creating unique threadIds
+int g_threadIdCounter = 0;		//counter for creating unique threadIds
 
-uint64_t g_interruptCount = 0; //global counter to count how many interrupts has passed. This value should not overflow for years.
+uint64_t g_interruptCount = 0;		//global counter to count how many interrupts has passed. This value should not overflow for years.
+uint64_t g_quantaCountdown = 80;	//global counter to keep track of how many quanta pass until runQueue switches.
 
 //Thread statuses
 typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates scheduled to run.
