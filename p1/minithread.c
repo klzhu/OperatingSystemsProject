@@ -272,7 +272,7 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 
 	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
-	else if (g_ml_runQueue->items == 0) 
+	else if (g_ml_runQueue->items == 0) //outta threads, switch to idle queue
 	{
 		if (g_runningThread == g_idleThread) { //if the running thread is already the idle thread, return
 			set_interrupt_level(old_level); //restore old interrupt level
