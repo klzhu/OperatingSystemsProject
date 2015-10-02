@@ -8,7 +8,7 @@
  *
  */
 
-#define NDEBUG 
+//#define NDEBUG REENABLE BEFORE SUBMITTING
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
@@ -39,8 +39,8 @@
  * that you feel they must have.
  */
 
-//Clock interrupt period, which is set to 100ms in our case
-const int INTERRUPT_PERIOD = 100 * MILLISECOND;
+ //Clock interrupt period in millseconds
+const int INTERRUPT_PERIOD_IN_MILLISECONDS = 100; // set to 100ms
 
 // ----- Global Variables ------ //
 minithread_t* g_runningThread = NULL; //points to currently running thread
@@ -132,6 +132,13 @@ int idle_thread_method(arg_t arg) {
 	return -1; //should never return
 }
 
+/*****		alarm handler	*****/
+// This function wakes up a thread and put it to runQueue. 
+// arg is the thread to wake up
+void alarm_handler_function(void* arg)
+{
+	minithread_start((minithread_t*)arg);
+}
 
 // ---- minithread ----
 minithread_t*
@@ -263,10 +270,10 @@ minithread_yield() {
 void 
 clock_handler(void* arg) {
 	set_interrupt_level(DISABLED); //disable interrupts while we're in interrupt handler
-	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id());
+	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id()); //REMOVE BEFORE SUBMITTING
 	
 	g_interruptCount++; //increment interrupt count
-	int alarmRunSuccess = alarm_run(); //run alarms if any
+	int alarmRunSuccess = alarm_check_and_run; //check to see if any alarms need to go off and run them if needed
 	AbortGracefully(alarmRunSuccess == -1, "Failed to run alarms in clock_handler()");
 
 	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
@@ -310,7 +317,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 
 	alarm_system_initalize(); //initialize our alarm system
 
-	minithread_clock_init(INTERRUPT_PERIOD, clock_handler); //install interrupt service with our interrupt period of 100ms
+	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service with our interrupt period of 100ms
 
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
 }
@@ -321,7 +328,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 void 
 minithread_sleep_with_timeout(int delay) {
 	set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
-	int alarmSuccess = alarm_create(delay);
+	int alarmSuccess = register_alarm(delay, alarm_handler_function, minithread_self());
 	AbortGracefully(alarmSuccess == -1, "Failed to create new alarm in minithread_sleep_with_timeout()");
 	minithread_stop(); //give up processor
 }

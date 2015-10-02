@@ -2,12 +2,13 @@
 * Generic queue implementation.
 *
 */
-#define NDEBUG 
-#include "queue.h"
+// #define NDEBUG //REENABLE BEFORE SUBMITTING
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#include <stdint.h>
 #include "alarm.h"
+#include "queue.h"
 
 typedef struct node {
 	void* itemPtr;//pointer to node's item
@@ -200,7 +201,7 @@ queue_delete(queue_t *queue, void* item) {
 }
 
 int 
-queue_ordered_insert(queue_t* queue, void* item, int orderVal) {
+queue_ordered_insert(queue_t* queue, void* item, uint64_t orderVal) {
 	if (queue == NULL || item == NULL) return -1;
 
 	node* newItem = malloc(sizeof(node));

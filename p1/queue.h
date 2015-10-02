@@ -68,7 +68,7 @@ int queue_delete(queue_t* queue, void* item);
 *
 * Returns 0 if an element was added, or -1 otherwise.
 */
-int queue_ordered_insert(queue_t* queue, void* item, int orderVal);
+int queue_ordered_insert(queue_t* queue, void* item, uint64_t orderVal);
 
 /*
 * Returns the first element of the queue
