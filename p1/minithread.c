@@ -273,6 +273,14 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 
 	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
+	//scheduler randomizer logic
+	//check quanta countdown
+	if (g_quantaCountdown == 0)
+	{
+		//switch logic
+	}
+
+
 	else if (g_ml_runQueue->items == 0) //outta threads, switch to idle queue
 	{
 		if (g_runningThread == g_idleThread) { //if the running thread is already the idle thread, return
@@ -395,6 +403,10 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, READY, NULL); AbortGracefully(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
 	g_idleThread = minithread_create_helper(idle_thread_method, NULL, READY, NULL); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
 	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
+
+	//current level queue pointer and quanta countdown
+	g_runQueue = g_ml_runQueue->queues[0];	//start at queue 0
+	g_quantaCountdown = 80;					//queue 0 goes for 80 quanta
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
