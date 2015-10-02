@@ -12,14 +12,8 @@
 typedef struct node {
 	void* itemPtr;//pointer to node's item
 	struct node* next;
+	int order; //priority of the node, lower order means it should be closer to the head. Non priority queue usage will ignore this.
 }node;
-
-//node for our priority sorted queue
-typedef struct priorityNode {
-	void* itemPtr; //pointer to node's item
-	struct pNode* next;
-	int sortingVal; //value that our priority queue will be sorted on 
-}pNode;
 
 typedef struct queue {
 	node* head;//ptr to first node
@@ -211,10 +205,68 @@ queue_search(queue_t *queue, void* itemToFind, void** itemToReturn) {
 }
 
 /*
-* Add item to the queue so that the queue maintains a sorted order
+* Add item to the queue so that the queue maintains a sorted order. We ensure that order has to be a positive number.
 * Returns 0 if an element was added, or -1 otherwise.
 */
 int 
-queue_insertionsort(queue_t* queue, alarm_id item) {
+queue_sortedinsert(queue_t* queue, void* item, int order) {
+	if (queue == NULL || item == NULL || order < 0) return -1;
 
+	node* newItem = malloc(sizeof(node));
+	if (newItem == NULL) return -1;
+
+	newItem->itemPtr = item;
+	newItem->order = order;
+
+	//if length is 0, queue is empty. insert new item to head and we're done
+	if (queue->length == 0)
+	{
+		queue->head = newItem;
+		queue->tail = newItem;
+		newItem->next = NULL;
+	}
+	else if (queue->head->order > newItem->order) //if first item's priority is lower than newItem, prepend and we're done
+	{
+		newItem->next = queue->head;
+		queue->head = newItem;
+		
+	}
+	else //otherwise, must iterate through to find where the new item should go
+	{
+		node *prev = NULL;
+		node *curr = queue->head;
+		while (curr != NULL && newItem->order > curr->order) //while the current node's priority is higher than ours and we haven't reached the end of the queue yet
+		{
+			prev = curr;
+			curr = curr->next;
+		}
+
+		if (curr == NULL) //reached the end of the list, add new item as the new tail
+		{
+			prev->next = newItem;
+			queue->tail = newItem;
+			newItem->next = NULL;
+		}
+
+		else //if we found somewhere to put our new item in the middle of the list
+		{
+			prev->next = newItem; //set previous item to our new item
+			newItem->next = curr; //add our item to the queue
+		}		
+	}
+	queue->length++;
 }
+
+/*
+* Returns the first element of the queue
+* Returns 0 if successful, -1 otherwise
+*/
+int queue_peek(queue_t* queue, void** item) {
+	//validate queue is not null or empty
+	if (queue == NULL || queue->length == 0) return -1;
+	assert(queue->head != NULL); //since queue is not empty, head should not be null
+
+	*item = queue->head;
+	return 0;
+}
+

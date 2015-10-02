@@ -69,9 +69,15 @@ int queue_delete(queue_t* queue, void* item);
 queue_search(queue_t *queue, void* itemToFind, void** itemToReturn);
 
 /*
-* Add item to the queue so that the queue maintains a sorted order
+* Add item to the queue so that the queue maintains a sorted order based on order. Lower order items should be closer to the head. 
 * Returns 0 if an element was added, or -1 otherwise.
 */
-int queue_insertionsort(queue_t* queue, void* item);
+int queue_sortedinsert(queue_t* queue, void* item, int order);
+
+/*
+* Returns the first element of the queue
+* Returns 0 if successful, -1 otherwise
+*/
+int queue_peek(queue_t* queue, void** item);
 
 #endif /*__QUEUE_H__*/
