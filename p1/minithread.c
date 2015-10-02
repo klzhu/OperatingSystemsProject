@@ -52,6 +52,8 @@ queue_t* g_zombieQueue = NULL; //global queue for finished threads waiting to be
 
 int g_threadIdCounter = 0; //counter for creating unique threadIds
 
+uint64_t g_interruptCount = 0; //global counter to count how many interrupts has passed. This value should not overflow for years.
+
 //Thread statuses
 typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates scheduled to run.
 
