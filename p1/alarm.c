@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "interrupts.h"
 #include "alarm.h"
@@ -18,6 +19,7 @@
 	}
 
 // ---- Global variables ---- //
+extern uint64_t g_interruptCount; //global counter to count how many interrupts has passed. This value should not overflow for years.
 queue_t* g_alarmsQueue = NULL; //global queue that holds our alarms in sorted order according to when they should be set off
 
 //struct for our alarm
@@ -38,6 +40,11 @@ int alarm_handler(arg_t arg) {
 	return -1;
 }
 
+alarm_handler_t alarm_get_alarm_handler() {
+	alarm_handler_t alarm_handler = alarm_handler;
+	return alarm_handler;
+}
+
 void alarm_system_initalize() {
 	g_alarmsQueue = queue_new(); AbortGracefully(g_alarmsQueue == NULL, "Failed to initialize alarmsQueue in alarm_system_initalize()");
 }
@@ -47,6 +54,7 @@ int alarm_create(int delay) {
 	//Validate input arguments and make sure our global alarms queue has been initialized
 	if (delay < 0 || g_alarmsQueue == NULL) return -1;
 
+	alarm_handler_t alarm_handler = alarm_get_alarm_handler();
 	alarm_id newAlarm = register_alarm(delay, alarm_handler, NULL);
 	if (newAlarm == NULL) return -1; //if our register_alarm returned NULL, return error status
 	
@@ -73,7 +81,8 @@ register_alarm(int delay, alarm_handler_t alarm, void *arg) {
 	newAlarm->sleepingThread = minithread_self(); //add the calling thread to the alarm
 
 	//calculate at which global interrupt the alarm should go off at, round up so thread sleeps at least that amount
-	uint64_t numInterruptsToSleep = ceil(delay / 100); //divide delay by interrupt period to figure out how many ticks to sleep
+	uint64_t numInterruptsToSleep = (uint64_t) delay / 100; //divide delay by interrupt period to figure out how many ticks to sleep
+	if (delay % 100 != 0) numInterruptsToSleep++; //add 1 tick if our delay was longer than 1 period
 	newAlarm->interrupt_to_wake = g_interruptCount + numInterruptsToSleep;
 
 	return newAlarm;
