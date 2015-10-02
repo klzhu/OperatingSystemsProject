@@ -7,20 +7,19 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdint.h>
-#include "alarm.h"
 #include "queue.h"
 
 typedef struct node {
 	void* itemPtr;//pointer to node's item
 	struct node* next;
-	int order; //priority of the node, lower order means it should be closer to the head. Non priority queue usage will ignore this.
-}node;
+	uint64_t order; //priority of the node, lower order means it should be closer to the head. Non priority queue usage will ignore this.
+}node_t;
 
 typedef struct queue {
-	node* head;//ptr to first node
-	node* tail;//ptr to last node
+	node_t* head;//ptr to first node
+	node_t* tail;//ptr to last node
 	int length;//size
-}queue;
+}queue_t;
 
 queue_t* queue_new() {
 	queue_t* q = malloc(sizeof(queue_t));
@@ -38,7 +37,7 @@ queue_prepend(queue_t *queue, void* item) {
 	if (queue == NULL || item == NULL) return -1;
 
 	//if malloc returns NULL
-	node *newItem = malloc(sizeof(node));
+	node_t *newItem = malloc(sizeof(node_t));
 	if (newItem == NULL) return -1;
 
 	newItem->itemPtr = item;
@@ -58,7 +57,7 @@ int
 queue_append(queue_t *queue, void* item) {
 	if (queue == NULL || item == NULL) return -1;
 
-	node* newItem = malloc(sizeof(node));
+	node_t* newItem = malloc(sizeof(node_t));
 	if (newItem == NULL) return -1;
 
 	newItem->itemPtr = item;
@@ -102,7 +101,7 @@ queue_dequeue(queue_t *queue, void** item) {
 	else if (queue->length >1) //more than 1 item in our queue
 	{
 		*item = (queue->head->itemPtr); //get the address of head node's element pointer
-		node *newHead = queue->head->next;
+		node_t *newHead = queue->head->next;
 		free(queue->head);
 		queue->head = newHead;
 	}
@@ -134,7 +133,7 @@ queue_iterate(queue_t *queue, func_t f, void* item) {
 	//if queue is empty or null
 	if (queue == NULL || f == NULL) return -1;
 
-	node* curr = queue->head;
+	node_t* curr = queue->head;
 	while (curr != NULL)
 	{
 		f(curr->itemPtr, item);
@@ -169,8 +168,8 @@ int
 queue_delete(queue_t *queue, void* item) {
 	if (queue == NULL || item == NULL) return -1;
 
-	node *prev = NULL;
-	node *curr = queue->head;
+	node_t *prev = NULL;
+	node_t *curr = queue->head;
 	while (curr != NULL && curr->itemPtr != item)
 	{
 		prev = curr;
@@ -204,14 +203,14 @@ int
 queue_ordered_insert(queue_t* queue, void* item, uint64_t orderVal) {
 	if (queue == NULL || item == NULL) return -1;
 
-	node* newItem = malloc(sizeof(node));
+	node_t* newItem = malloc(sizeof(node_t));
 	if (newItem == NULL) return -1;
 
 	newItem->itemPtr = item;
 	newItem->order = orderVal;
 
-	node *prev = NULL;
-	node *curr = queue->head;
+	node_t *prev = NULL;
+	node_t *curr = queue->head;
 	// Traverse the queue such that newItem is ordered between prev and curr: prev->newItem->curr
 	while (curr != NULL && newItem->order > curr->order) //while the current node's priority is higher than ours and we haven't reached the end of the queue yet
 	{

@@ -315,9 +315,9 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
 
-	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service with our interrupt period of 100ms
+	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service, enabled by context switch from kernel thread
 
-	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
+	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread
 }
 
 /*
@@ -326,8 +326,8 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 void 
 minithread_sleep_with_timeout(int delay) {
 	set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
-	void* alarmSuccess = register_alarm(delay, alarm_handler_function, minithread_self());
-	AbortGracefully(alarmSuccess == NULL, "Failed to create new alarm in minithread_sleep_with_timeout()");
+	alarm_id newAlarm = register_alarm(delay, alarm_handler_function, minithread_self());
+	AbortGracefully(newAlarm == NULL, "Failed to create new alarm in minithread_sleep_with_timeout()");
 	minithread_stop(); //give up processor
 }
 

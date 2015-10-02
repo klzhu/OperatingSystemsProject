@@ -4,7 +4,7 @@
 #ifndef __QUEUE_H__
 #define __QUEUE_H__
 
-#include <stdint.h>
+#include <stdint.h> //for uint64_t
 
 /*
  * queue_t is a pointer to an internally maintained data structure.
