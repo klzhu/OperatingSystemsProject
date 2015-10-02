@@ -66,7 +66,7 @@ int queue_delete(queue_t* queue, void* item);
 * Return 0 (success) and first item if queue is nonempty, or -1 (failure) and
 * NULL if queue is empty.
 */
-queue_search(queue_t *queue, void* itemToFind, void** itemToReturn);
+int queue_search(queue_t *queue, void* itemToFind, void** itemToReturn);
 
 /*
 * Add item to the queue so that the queue maintains a sorted order
