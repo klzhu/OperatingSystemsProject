@@ -104,6 +104,29 @@ typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates sch
 	 }
  }
 
+ //returns next level once a thread's quanta are used up.
+ int move_up_level(int level) {
+	 switch (level)
+	 {
+	 case 0 :
+		 return 1;
+		 break;
+	 case 1 :
+		 return 2;
+		 break;
+	 case 2 :
+		 return 3;
+		 break;
+	 case 3 :
+		 return 3;
+		 break;
+	 default:
+		 printf("unclear how you passed in an invalid level... have a 3");
+		 return 3;
+		 break;
+	 }
+ }
+
  // This function does same as minithread_yield() and minithread_stop.
 // It takes in the thread state and the queue the thread should be added to as input
  void minithread_yield_helper(thread_state status, queue_t* whichQueue);
@@ -311,11 +334,29 @@ clock_handler(void* arg) {
 
 	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
 
-	if (queue_length(g_alarmsQueue) > 0)
-	{
-		//we have pending alarms!
+	//checks for outstanding alarms
+	alarm_check_and_run();
 
+	//quanta logic
+	//doesn't apply to the idle thread
+	if (g_runningThread != g_idleThread)
+	{
+		g_runningThread->quanta--;
+		if (g_runningThread->quanta == 0)
+		{
+			minithread_t* movingThread;
+			movingThread = g_runningThread;
+			//move down to next level
+			movingThread->level = move_up_level(movingThread->level);		//set level
+			movingThread->quanta = quanta_from_level(movingThread->level);	//set new quanta
+			multilevel_queue_enqueue(movingThread, movingThread->level);	//append to next level
+			//running thread done for now, move to idle thread
+			g_runningThread = g_idleThread;
+			//switch to idle stack
+
+		}
 	}
+	
 }
 
 /*

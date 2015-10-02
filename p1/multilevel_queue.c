@@ -79,14 +79,49 @@ int multilevel_queue_enqueue(multilevel_queue_t* queue, int level, void* item)
  */
 int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
 {
-	if ((queue->queues[level])->length == 0)
+	if (queue->items == 0)
 	{
-		//handle empty multiqueue or empty levelqueue
+		//handle empty multiqueue 
 		*item = NULL;
 		return -1;
 	}
+	//dequeue element logic
 	int good;
-	good = queue_dequeue(queue->queues[level], item);
+	//check target queue
+	if (queue_length(queue->queues[level]) != 0)
+	{
+		good = queue_dequeue(queue->queues[level], item);
+	}
+	else
+	{
+		//check next queue
+		if (queue_length(queue->queues[((level + 1) % 4)]) != 0)
+		{
+			good = queue_dequeue(queue->queues[((level + 1) % 4)], item);
+		}
+		else
+		{
+			//check next queue
+			if (queue_length(queue->queues[((level + 2) % 4)]) != 0)
+			{
+				good = queue_dequeue(queue->queues[((level + 2) % 4)], item);
+			}
+			else
+			{
+				//check final queue - must have an element if reaching this step
+				if (queue_length(queue->queues[((level + 3) % 4)]) != 0)
+				{
+					good = queue_dequeue(queue->queues[((level + 3) % 4)], item);
+				}
+				else
+				{
+					good = -1;
+					printf("good set to -1: something is wrong and dequeue fell through all ");
+				}
+			}
+		}
+	}
+	//return logic
 	if (good == 0)
 	{
 		//success!
