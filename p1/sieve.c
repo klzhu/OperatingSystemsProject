@@ -29,6 +29,19 @@ typedef struct {
   int prime;
 } filter_t;
 
+int sleepFunction(int* arg)
+{
+	int sleepTime = 300; // in ms
+	int step = 50;
+	while (1) {
+		printf("Go to sleep %d ms\n", sleepTime);
+		minithread_sleep_with_timeout(sleepTime);
+		sleepTime += step;
+		printf("Wake up\n\n");
+	}
+}
+
+
 
 int max = MAXPRIME;
 
@@ -70,6 +83,8 @@ int filter(int* arg) {
 }
 
 int sink(int* arg) {
+  minithread_fork(sleepFunction, NULL);
+
   channel_t* p = (channel_t *) malloc(sizeof(channel_t));
   int value;
 

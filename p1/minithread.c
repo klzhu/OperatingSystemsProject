@@ -124,9 +124,7 @@ int idle_thread_method(arg_t arg) {
 
 	while(1) //run forever
 	{
-		while (queue_length(g_runQueue) == 0); //if there are no threads in run queue to run, loop
-		
-		minithread_yield(); // yield process to another thread
+		if (queue_length(g_runQueue) > 0) minithread_yield(); //if there's a thread in runQueue, yield to that thread
 	}
 
 	return -1; //should never return
@@ -135,10 +133,13 @@ int idle_thread_method(arg_t arg) {
 /*****		alarm handler	*****/
 // This function wakes up a thread and put it to runQueue. 
 // arg is the thread to wake up
-void alarm_handler_function(void* arg)
-{
+void alarm_handler_function(void* arg) {
+#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
+	printf("Alarm goes off to wake up thread (ID = %d) at interrupt count = %lu\n", ((minithread_t*)arg)->threadId, g_interruptCount);
+#endif
 	minithread_start((minithread_t*)arg);
 }
+
 
 // ---- minithread ----
 minithread_t*
@@ -270,7 +271,9 @@ minithread_yield() {
 void 
 clock_handler(void* arg) {
 	set_interrupt_level(DISABLED); //disable interrupts while we're in interrupt handler
-	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id()); //REMOVE BEFORE SUBMITTING
+#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
+	printf("Enter clock_handler(), yield current thread (ID = %d) at interrupt count = %lu\n", minithread_id(), g_interruptCount);
+#endif
 	
 	g_interruptCount++; //increment interrupt count
 	int alarmRunSuccess = alarm_check_and_run(); //check to see if any alarms need to go off and run them if needed
