@@ -320,7 +320,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
  */
 void 
 minithread_sleep_with_timeout(int delay) {
-	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
+	set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
 	int alarmSuccess = alarm_create(delay);
 	AbortGracefully(alarmSuccess == -1, "Failed to create new alarm in minithread_sleep_with_timeout()");
 	minithread_stop(); //give up processor
