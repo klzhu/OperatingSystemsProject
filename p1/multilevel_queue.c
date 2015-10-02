@@ -15,6 +15,7 @@
 
 struct multilevel_queue {
 	int num_levels;
+	int items;
 	queue_t** queues; //NOTE: we want an array of queues, I think this is the way to do it, though we may only need it to be a pointer?
 };
 
@@ -32,6 +33,7 @@ multilevel_queue_t* multilevel_queue_new(int number_of_levels)
 	}
 	//malloc didn't fail! Do things
 	ret->num_levels = number_of_levels;
+	ret->items = 0;
 	//queue_t** queues[number_of_levels];
 	//ret->queues = queues;
 	ret->queues = (queue_t**)malloc(sizeof(queue_t*)*number_of_levels);
@@ -57,8 +59,16 @@ multilevel_queue_t* multilevel_queue_new(int number_of_levels)
  */
 int multilevel_queue_enqueue(multilevel_queue_t* queue, int level, void* item)
 {
+	int good;
 	//append returns 0 or -1, as enqueue is supposed to 
-	return queue_append(queue->queues[level], item);
+	good = queue_append(queue->queues[level], item);
+	if (good == 0)
+	{
+		//success!
+		queue->items++;
+	}
+	//will be -1 if dequeueing failed, else 0
+	return good;
 }
 
 /*
@@ -69,7 +79,56 @@ int multilevel_queue_enqueue(multilevel_queue_t* queue, int level, void* item)
  */
 int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
 {
-	return queue_dequeue(queue->queues[level], item);
+	if (queue->items == 0)
+	{
+		//handle empty multiqueue 
+		*item = NULL;
+		return -1;
+	}
+	//dequeue element logic
+	int good;
+	//check target queue
+	if (queue_length(queue->queues[level]) != 0)
+	{
+		good = queue_dequeue(queue->queues[level], item);
+	}
+	else
+	{
+		//check next queue
+		if (queue_length(queue->queues[((level + 1) % 4)]) != 0)
+		{
+			good = queue_dequeue(queue->queues[((level + 1) % 4)], item);
+		}
+		else
+		{
+			//check next queue
+			if (queue_length(queue->queues[((level + 2) % 4)]) != 0)
+			{
+				good = queue_dequeue(queue->queues[((level + 2) % 4)], item);
+			}
+			else
+			{
+				//check final queue - must have an element if reaching this step
+				if (queue_length(queue->queues[((level + 3) % 4)]) != 0)
+				{
+					good = queue_dequeue(queue->queues[((level + 3) % 4)], item);
+				}
+				else
+				{
+					good = -1;
+					printf("good set to -1: something is wrong and dequeue fell through all ");
+				}
+			}
+		}
+	}
+	//return logic
+	if (good == 0)
+	{
+		//success!
+		queue->items--;
+	}
+	//will be -1 if dequeueing failed, else 0
+	return good;
 }
 
 /* 
