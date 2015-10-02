@@ -216,5 +216,5 @@ queue_search(queue_t *queue, void* itemToFind, void** itemToReturn) {
 */
 int 
 queue_insertionsort(queue_t* queue, alarm_id item) {
-
+	return -1;
 }
