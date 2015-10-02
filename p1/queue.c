@@ -7,11 +7,19 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#include "alarm.h"
 
 typedef struct node {
 	void* itemPtr;//pointer to node's item
-	struct node * next;
+	struct node* next;
 }node;
+
+//node for our priority sorted queue
+typedef struct priorityNode {
+	void* itemPtr; //pointer to node's item
+	struct pNode* next;
+	int sortingVal; //value that our priority queue will be sorted on 
+}pNode;
 
 typedef struct queue {
 	node* head;//ptr to first node
@@ -176,4 +184,37 @@ queue_delete(queue_t *queue, void* item) {
 		queue->length--;
 		return 0;
 	}
+}
+
+/*
+* Delete the first instance of the specified item from the given queue.
+* Returns 0 if an element was found, or -1 and NULL otherwise.
+*/
+int
+queue_search(queue_t *queue, void* itemToFind, void** itemToReturn) {
+	if (queue == NULL || itemToFind == NULL) return -1;
+
+	node *prev = NULL;
+	node *curr = queue->head;
+	while (curr != NULL && curr->itemPtr != itemToFind)
+	{
+		prev = curr;
+		curr = curr->next;
+	}
+
+	if (curr == NULL) return -1; //not found
+	else //curr holds item
+	{
+		*itemToReturn = curr;
+	}
+	return 0;
+}
+
+/*
+* Add item to the queue so that the queue maintains a sorted order
+* Returns 0 if an element was added, or -1 otherwise.
+*/
+int 
+queue_insertionsort(queue_t* queue, alarm_id item) {
+
 }

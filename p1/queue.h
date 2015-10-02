@@ -10,7 +10,7 @@
  * represented.  They see and manipulate only queue_t's.
  */
 typedef struct queue queue_t;
-/*test*/
+
 /*
  * Return an empty queue.  Returns NULL on error.
  */
@@ -60,5 +60,18 @@ int queue_length(const queue_t* queue);
  * Returns 0 if an element was deleted, or -1 otherwise.
  */
 int queue_delete(queue_t* queue, void* item);
+
+/*
+* Searches for the first instance of the specified itemToFind from the given queue.
+* Return 0 (success) and first item if queue is nonempty, or -1 (failure) and
+* NULL if queue is empty.
+*/
+queue_search(queue_t *queue, void* itemToFind, void** itemToReturn);
+
+/*
+* Add item to the queue so that the queue maintains a sorted order
+* Returns 0 if an element was added, or -1 otherwise.
+*/
+int queue_insertionsort(queue_t* queue, void* item);
 
 #endif /*__QUEUE_H__*/
