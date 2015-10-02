@@ -62,17 +62,13 @@ int queue_length(const queue_t* queue);
 int queue_delete(queue_t* queue, void* item);
 
 /*
-* Searches for the first instance of the specified itemToFind from the given queue.
-* Return 0 (success) and first item if queue is nonempty, or -1 (failure) and
-* NULL if queue is empty.
-*/
-int queue_search(queue_t *queue, void* itemToFind, void** itemToReturn);
-
-/*
-* Add item to the queue so that the queue maintains a sorted order based on order. Lower order items should be closer to the head. 
+* Add data to the queue with items ordered according to their orderVals from small to large.
+* In order to maintain an ordered queue, data must be inserted with this function, and queue_append() or
+* queue_prepend() should not be used. Otherwise the queue may not be ordered. 
+*
 * Returns 0 if an element was added, or -1 otherwise.
 */
-int queue_sortedinsert(queue_t* queue, void* item, int order);
+int queue_ordered_insert(queue_t* queue, void* item, int orderVal);
 
 /*
 * Returns the first element of the queue

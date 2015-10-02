@@ -80,8 +80,9 @@ queue_append(queue_t *queue, void* item) {
 
 int
 queue_dequeue(queue_t *queue, void** item) {
-	//our queue is empty, if our queue is NULL, or the item is NULL, return -1
-	if (queue->length == 0 || queue == NULL || item == NULL)
+	//validate our inputs and ensure queue is not empty
+	if (item == NULL) return -1; 
+	if (queue->length == 0 || queue == NULL)
 	{
 		*item = NULL;
 		return -1;
@@ -106,6 +107,24 @@ queue_dequeue(queue_t *queue, void** item) {
 	}
 
 	queue->length--;
+	return 0;
+}
+
+/*
+* Returns the first element of the queue
+* Returns 0 if successful, -1 otherwise
+*/
+int queue_peek(queue_t* queue, void** item) {
+	//validate inputs and ensure queue is not empty
+	if (item == NULL) return -1;
+	if (queue == NULL || queue->length == 0) {
+		*item = NULL;
+		return -1;
+	}
+
+	assert(queue->head != NULL); //since queue is not empty, head should not be null
+
+	*item = queue->head->itemPtr; //return the item pointer that the head is pointing to
 	return 0;
 }
 
@@ -180,93 +199,33 @@ queue_delete(queue_t *queue, void* item) {
 	}
 }
 
-/*
-* Delete the first instance of the specified item from the given queue.
-* Returns 0 if an element was found, or -1 and NULL otherwise.
-*/
-int
-queue_search(queue_t *queue, void* itemToFind, void** itemToReturn) {
-	if (queue == NULL || itemToFind == NULL) return -1;
-
-	node *prev = NULL;
-	node *curr = queue->head;
-	while (curr != NULL && curr->itemPtr != itemToFind)
-	{
-		prev = curr;
-		curr = curr->next;
-	}
-
-	if (curr == NULL) return -1; //not found
-	else //curr holds item
-	{
-		*itemToReturn = curr;
-	}
-	return 0;
-}
-
-/*
-* Add item to the queue so that the queue maintains a sorted order. We ensure that order has to be a positive number.
-* Returns 0 if an element was added, or -1 otherwise.
-*/
 int 
-queue_sortedinsert(queue_t* queue, void* item, int order) {
-	if (queue == NULL || item == NULL || order < 0) return -1;
+queue_ordered_insert(queue_t* queue, void* item, int orderVal) {
+	if (queue == NULL || item == NULL) return -1;
 
 	node* newItem = malloc(sizeof(node));
 	if (newItem == NULL) return -1;
 
 	newItem->itemPtr = item;
-	newItem->order = order;
+	newItem->order = orderVal;
 
-	//if length is 0, queue is empty. insert new item to head and we're done
-	if (queue->length == 0)
+	node *prev = NULL;
+	node *curr = queue->head;
+	// Traverse the queue such that newItem is ordered between prev and curr: prev->newItem->curr
+	while (curr != NULL && newItem->order > curr->order) //while the current node's priority is higher than ours and we haven't reached the end of the queue yet
 	{
-		queue->head = newItem;
-		queue->tail = newItem;
-		newItem->next = NULL;
+		prev = curr;
+		curr = curr->next;
 	}
-	else if (queue->head->order > newItem->order) //if first item's priority is lower than newItem, prepend and we're done
-	{
-		newItem->next = queue->head;
-		queue->head = newItem;
-		
-	}
-	else //otherwise, must iterate through to find where the new item should go
-	{
-		node *prev = NULL;
-		node *curr = queue->head;
-		while (curr != NULL && newItem->order > curr->order) //while the current node's priority is higher than ours and we haven't reached the end of the queue yet
-		{
-			prev = curr;
-			curr = curr->next;
-		}
 
-		if (curr == NULL) //reached the end of the list, add new item as the new tail
-		{
-			prev->next = newItem;
-			queue->tail = newItem;
-			newItem->next = NULL;
-		}
+	// By now, the order should be prev->newItem->curr, but we need to deal with NULL cases
+	if (prev == NULL) queue->head = newItem;	//if prev is NULL, our original queue was empty and our new item is first item
+	else prev->next = newItem; //otherwise, prev should now point to the new item
 
-		else //if we found somewhere to put our new item in the middle of the list
-		{
-			prev->next = newItem; //set previous item to our new item
-			newItem->next = curr; //add our item to the queue
-		}		
-	}
+	newItem->next = curr;
+	if (curr == NULL) 	queue->tail = newItem;	 //if curr is NULL, we reached end of list and new item is now new tail
+
 	queue->length++;
-}
-
-/*
-* Returns the first element of the queue
-* Returns 0 if successful, -1 otherwise
-*/
-int queue_peek(queue_t* queue, void** item) {
-	//validate queue is not null or empty
-	if (queue == NULL || queue->length == 0) return -1;
-	assert(queue->head != NULL); //since queue is not empty, head should not be null
-
-	*item = queue->head;
 	return 0;
 }
 

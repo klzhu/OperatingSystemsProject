@@ -325,13 +325,13 @@ int main() {
 	node4->itemPtr = 2;
 	node4->order = 2;
 
-	queue_sortedinsert(q, node1, node1->order);
-	queue_sortedinsert(q, node2, node2->order);
-	queue_sortedinsert(q, node3, node3->order);
-	queue_sortedinsert(q, node4, node4->order);
+	queue_ordered_insert(q, node1, node1->order);
+	queue_ordered_insert(q, node2, node2->order);
+	queue_ordered_insert(q, node3, node3->order);
+	queue_ordered_insert(q, node4, node4->order);
 
-	node_t* test = NULL;
-	queue_peek(q, (void**)&test);
+	//node_t* test = NULL;
+	//queue_peek(q, (void**)&test);
 
 	return 1;
 }
