@@ -273,7 +273,7 @@ clock_handler(void* arg) {
 	printf("Enter clock_handler(), yield current thread (ID = %d)\n", minithread_id()); //REMOVE BEFORE SUBMITTING
 	
 	g_interruptCount++; //increment interrupt count
-	int alarmRunSuccess = alarm_check_and_run; //check to see if any alarms need to go off and run them if needed
+	int alarmRunSuccess = alarm_check_and_run(); //check to see if any alarms need to go off and run them if needed
 	AbortGracefully(alarmRunSuccess == -1, "Failed to run alarms in clock_handler()");
 
 	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
@@ -315,8 +315,6 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
 
-	alarm_system_initalize(); //initialize our alarm system
-
 	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service with our interrupt period of 100ms
 
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
@@ -328,8 +326,8 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 void 
 minithread_sleep_with_timeout(int delay) {
 	set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm due to global alarms queue
-	int alarmSuccess = register_alarm(delay, alarm_handler_function, minithread_self());
-	AbortGracefully(alarmSuccess == -1, "Failed to create new alarm in minithread_sleep_with_timeout()");
+	void* alarmSuccess = register_alarm(delay, alarm_handler_function, minithread_self());
+	AbortGracefully(alarmSuccess == NULL, "Failed to create new alarm in minithread_sleep_with_timeout()");
 	minithread_stop(); //give up processor
 }
 
