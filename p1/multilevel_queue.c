@@ -107,8 +107,8 @@ int multilevel_queue_free(multilevel_queue_t* queue)
 	if (queue == NULL) return -1;
 
 	int retVal = 0;
-	int k;
 
+	int k;
 	for (k = 0; k < queue->num_levels; k++) //iterate through and try to free every queue
 	{
 		int opVal = queue_free(queue->queues[k]);
