@@ -5,6 +5,7 @@
 #include "queue.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 /* multilevel queue
  * 0 - student
@@ -92,56 +93,22 @@ int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
 	//validate inputs
 	if (queue == NULL || level < 0 || level >= queue->num_levels) return -1;
 
-	if (queue->items == 0)
+	// Dequeue the first item by wrapping around levels starting from the input level
+	bool searchedInputLevel = false;  // indicate if the input level queue has been searched or not
+	int currLevel = level;
+	while (searchedInputLevel == false || currLevel != level) // if input level has not been searched or it has not reach the input level again
 	{
-		//handle empty multiqueue 
-		*item = NULL;
-		return -1;
-	}
-	//dequeue element logic
-	int good;
-	//check target queue
-	if (queue_length(queue->queues[level]) != 0)
-	{
-		good = queue_dequeue(queue->queues[level], item);
-	}
-	else
-	{
-		//check next queue
-		if (queue_length(queue->queues[((level + 1) % 4)]) != 0)
+		if (queue_dequeue(queue->queues[level], item) == 0)  // if successfully dequeued, return its level
 		{
-			good = queue_dequeue(queue->queues[((level + 1) % 4)], item);
+			queue->items--;
+			return currLevel;
 		}
-		else
-		{
-			//check next queue
-			if (queue_length(queue->queues[((level + 2) % 4)]) != 0)
-			{
-				good = queue_dequeue(queue->queues[((level + 2) % 4)], item);
-			}
-			else
-			{
-				//check final queue - must have an element if reaching this step
-				if (queue_length(queue->queues[((level + 3) % 4)]) != 0)
-				{
-					good = queue_dequeue(queue->queues[((level + 3) % 4)], item);
-				}
-				else
-				{
-					good = -1;
-					printf("good set to -1: something is wrong and dequeue fell through all ");
-				}
-			}
-		}
+		searchedInputLevel = true;	// the first input level has been searched
+		currLevel++;
+		if (currLevel >= queue->num_levels) currLevel -= queue->num_levels; // wrap around
 	}
-	//return logic
-	if (good == 0)
-	{
-		//success!
-		queue->items--;
-	}
-	//will be -1 if dequeueing failed, else 0
-	return good;
+
+	return -1; //if we left the while loop and has not returned, there was nothing to dequeue
 }
 
 /* 
