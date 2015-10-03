@@ -422,13 +422,40 @@ clock_handler(void* arg) {
 			minithread_t* movingThread;
 			movingThread = g_runningThread;
 			//move down to next level
+			movingThread->status = READY;
 			movingThread->level = move_up_level(movingThread->level);					//set level
 			movingThread->quanta = quanta_from_level(movingThread->level);				//set new quanta
 			multilevel_queue_enqueue(g_ml_runQueue, movingThread->level, movingThread);	//append to next level
-			//running thread done for now, move to idle thread
-			g_runningThread = g_idleThread;
-			//switch to idle stack to get next thread
-			minithread_switch(movingThread->stacktop, g_runningThread->stacktop);
+			
+			if (multilevel_queue_items(g_ml_runQueue) == 0)
+			{
+				//no items left in mlqueue
+				g_runningThread = g_idleThread;
+				minithread_switch(movingThread->stacktop, g_runningThread->stacktop);
+			}
+			else if (queue_length(g_runQueue) == 0)
+			{
+				int dequeueSuccess;
+				level_queue_switch();
+				dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); 
+				AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in minithread_yield_helper()");
+				assert(g_runningThread != NULL && g_runningThread->status == READY);
+			}
+			else
+			{
+				int dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_runningThread->level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
+				AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in minithread_yield_helper()");
+				assert(g_runningThread != NULL && g_runningThread->status == READY);
+			}
+			//context switch to new running thread
+			assert(g_runningThread != NULL);
+			g_runningThread->status = RUNNING;
+			minithread_switch(&(movingThread->stacktop), &(g_runningThread->stacktop)); //this will reenable interrupts automatically
+																						
+			////running thread done for now, move to idle thread
+			//g_runningThread = g_idleThread;
+			////switch to idle stack to get next thread
+			//minithread_switch(movingThread->stacktop, g_runningThread->stacktop);
 
 		}
 	}
