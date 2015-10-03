@@ -41,11 +41,11 @@
 
 //Clock interrupt period in millseconds
 const int INTERRUPT_PERIOD_IN_MILLISECONDS = 100; // set to 100ms
-const int NUMBER_OF_LEVELS_OF_ML_THREAD = 4;	// Number of levels for multi-level threads
+const int NUMBER_OF_LEVELS_OF_ML_THREAD = 4; // Number of levels for multi-level threads
 const int INITIAL_THREAD_QUANTA[] = { 1, 2, 4, 8 }; // Quanta (# of interrupts) set to each level, array size must match NUMBER_OF_LEVELS_OF_ML_THREAD
 const int INITIAL_QUEUE_QUANTA[] = { 80, 40, 24, 16 }; // Quanta (# of interrupts) set to each level, array size must match NUMBER_OF_LEVELS_OF_ML_THREAD
 
-													   // ----- Global Variables ------ //
+ // ----- Global Variables ------ //
 minithread_t* g_runningThread = NULL; //points to currently running thread
 minithread_t* g_idleThread = NULL; //our idle thread that runs if no threads are left to run
 minithread_t* g_reaperThread = NULL; //thread to clean up threads in the zombie queue
@@ -59,7 +59,7 @@ int g_quantaCountdown = -1; //global counter to keep track of how many quanta pa
 
 uint64_t g_interruptCount = 0; //global counter to count how many interrupts has passed. This value should not overflow for years.
 
-							   //Thread statuses
+//Thread statuses
 typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // thread's states.
 typedef enum { NONE, RUN_QUEUE, ZOMBIE_QUEUE } thread_queue_name; // name of thread queues
 
@@ -167,13 +167,13 @@ minithread_create_helper(proc_t proc, arg_t arg, thread_state status, multilevel
 	minithread_t* mt = malloc(sizeof(minithread_t));
 	if (mt == NULL) return NULL; //if malloc errored
 
-								 //allocate stack for thread
+	//allocate stack for thread
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
 	minithread_initialize_stack(&(mt->stacktop), proc, arg, cleanup_proc, NULL);
 
-	mt->status = status;	//set the thread's status according to the function input
-	mt->level = 0;			//set to default level 0
-	mt->quanta = INITIAL_THREAD_QUANTA[mt->level]; // initialize its quanta
+	mt->status = status; //set the thread's status according to the function input
+	mt->level = 0; //set to default level 0
+	mt->quanta = INITIAL_THREAD_QUANTA[mt->level]; //initialize its quanta
 
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we enter crit section
 	mt->threadId = g_threadIdCounter++;
@@ -225,12 +225,12 @@ minithread_start(minithread_t *t)
 	t->status = READY;
 
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt as we modify global run queue
-	int appendSuccess = multilevel_queue_enqueue(g_runQueue, t->level, t);	// put to the same level queue
-	AbortGracefully(appendSuccess != 0, "Queue_append error in minithread_start()");
+	int appendSuccess = multilevel_queue_enqueue(g_runQueue, t->level, t);	//put to the same level queue
+	AbortGracefully(appendSuccess != 0, "Multilevel_queue_enqueue error in minithread_start()");
 	set_interrupt_level(old_level); //restore interrupt level
 }
 
-// We assume that each yield() and put back to runQueue would be counted as having consumed 1 quanta in multi-level queue management
+// We assume that each yield() and being added back to runQueue counts as 1 quanta in multi-level queue management
 void
 minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
 {
@@ -241,7 +241,7 @@ minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
 	minithread_t* yieldingThread = minithread_self(); //get calling thread
 	assert(yieldingThread != NULL && yieldingThread->status == RUNNING);
 
-	assert(multilevel_queue_length(g_runQueue) >= 0); // self check
+	assert(multilevel_queue_length(g_runQueue) >= 0); //self check
 
   	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
@@ -257,7 +257,7 @@ minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
 		AbortGracefully(level == -1, "Queue_dequeue error in minithread_yield_helper()");
 		if (level > g_current_level) { // no thread in current level, move to the next level
 			g_current_level++;
-			if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0;
+			if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0; //reset quanta level back to highest priority after last level
 			g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level];
 		}
 		else { //got thread from current level, handle lowering of quantaCountDown.
