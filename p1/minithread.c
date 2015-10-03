@@ -123,7 +123,7 @@ int move_up_level(int level) {
 		return 3;
 		break;
 	default:
-		printf("unclear how you passed in an invalid level... have a 3");
+		printf("unclear how you passed in an invalid level... Have a 3");
 		return 3;
 		break;
 	}
@@ -303,7 +303,7 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 
 	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
-																		   //case where mlqueue is outta threads, switch to idle queue
+	//case : multilevel_queue is outta threads, switch to idle thread
 	else if (multilevel_queue_items(g_ml_runQueue) == 0)
 	{
 		if (g_runningThread == g_idleThread) { //if the running thread is already the idle thread, return
@@ -312,15 +312,14 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 		}
 		else g_runningThread = g_idleThread; //if no threads left to run, switch to idle thread
 	}
-	//case where current queue is out of threads
-	//force the switch to next queue
+	//case : current queue is out of threads
+	//switch to next queue
 	else if (queue_length(g_runQueue) == 0)
 	{
-		//SWITCH LOGIC
 		int dequeueSuccess;
-		//current queue out of threads? switch to next one
 		level_queue_switch();
 		dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
+		// <> left in case we did actually need it <>
 		//if (dequeueSuccess != 0)
 		//{
 		//	//still no threads? keep on switchin'
@@ -338,7 +337,7 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 		assert(g_runningThread != NULL && g_runningThread->status == READY);
 		
 	}
-	//current queue still has threads
+	//case : current queue still has threads
 	else
 	{
 		int dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_runningThread->level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
@@ -354,6 +353,7 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 		yieldingThread->quanta--;
 		if (yieldingThread->quanta <= 0)
 		{
+			//only threads of levels 0,1,2 increment level, level 3 threads remain there
 			if (yieldingThread->level < 3)
 			{
 				int appendSuccess = multilevel_queue_enqueue(g_ml_runQueue, yieldingThread->level + 1, yieldingThread);
@@ -398,18 +398,11 @@ clock_handler(void* arg) {
 	printf("Enter clock_handler(), yield current thread (ID = %d) at interrupt count = %lu\n", minithread_id(), g_interruptCount);
 #endif
 
-	g_interruptCount++; //increment interrupt count
+	g_interruptCount++;	//increment interrupt count
 	int alarmRunSuccess = alarm_check_and_run(); //check to see if any alarms need to go off and run them if needed
 	AbortGracefully(alarmRunSuccess == -1, "Failed to run alarms in clock_handler()");
 
 	minithread_yield(); //yield processor, context switch will automatically reenable interrupts
-
-	//checks for outstanding alarms
-	//alarm_check_and_run();
-
-	//TODO logic of switching when a queue is out of quanta
-
-
 
 	//quanta logic
 	//doesn't apply to the idle thread
@@ -419,11 +412,9 @@ clock_handler(void* arg) {
 		g_quantaCountdown--;
 		if (g_quantaCountdown == 0)
 		{
-			//SWITCH LOGIC
 			level_queue_switch();
-			//call minithread yield here?
+			minithread_yield();
 		}
-
 		//thread quanta logic
 		g_runningThread->quanta--;
 		if (g_runningThread->quanta == 0)
@@ -431,12 +422,12 @@ clock_handler(void* arg) {
 			minithread_t* movingThread;
 			movingThread = g_runningThread;
 			//move down to next level
-			movingThread->level = move_up_level(movingThread->level);		//set level
-			movingThread->quanta = quanta_from_level(movingThread->level);	//set new quanta
+			movingThread->level = move_up_level(movingThread->level);					//set level
+			movingThread->quanta = quanta_from_level(movingThread->level);				//set new quanta
 			multilevel_queue_enqueue(g_ml_runQueue, movingThread->level, movingThread);	//append to next level
-																			//running thread done for now, move to idle thread
+			//running thread done for now, move to idle thread
 			g_runningThread = g_idleThread;
-			//switch to idle stack
+			//switch to idle stack to get next thread
 			minithread_switch(movingThread->stacktop, g_runningThread->stacktop);
 
 		}
@@ -477,10 +468,10 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_idleThread = minithread_create_helper(idle_thread_method, NULL, READY, NULL); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
 	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
 
-	//current level queue pointer and quanta countdown
+	//current level queue pointer and quanta countdown initialization
 	queue_t** temp = multilevel_queue_levels(g_ml_runQueue);
-	g_runQueue = temp[0];	//start at queue 0
-	g_quantaCountdown = 80;					//queue 0 goes for 80 quanta
+	g_runQueue = temp[0];		//start at queue 0
+	g_quantaCountdown = 80;		//queue 0 goes for 80 quanta
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
