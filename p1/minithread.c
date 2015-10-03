@@ -478,7 +478,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
 
 	//current level queue pointer and quanta countdown
-	g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[0];	//start at queue 0
+	g_runQueue = multilevel_queue_levels(g_ml_runQueue)[0];	//start at queue 0
 	g_quantaCountdown = 80;					//queue 0 goes for 80 quanta
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
