@@ -433,7 +433,7 @@ clock_handler(void* arg) {
 			//move down to next level
 			movingThread->level = move_up_level(movingThread->level);		//set level
 			movingThread->quanta = quanta_from_level(movingThread->level);	//set new quanta
-			multilevel_queue_enqueue(movingThread, movingThread->level);	//append to next level
+			multilevel_queue_enqueue(movingThread, movingThread->level, movingThread);	//append to next level
 																			//running thread done for now, move to idle thread
 			g_runningThread = g_idleThread;
 			//switch to idle stack
