@@ -19,6 +19,9 @@ typedef struct multilevel_queue multilevel_queue_t;
  */
 multilevel_queue_t* multilevel_queue_new(int number_of_levels);
 
+/*returns the number of items in a multilevel queue*/
+int multilevel_queue_items(multilevel_queue_t* mlq);
+
 /*
  * Appends a void* to the multilevel queue at the specified level.
  * Return 0 (success) or -1 (failure).
