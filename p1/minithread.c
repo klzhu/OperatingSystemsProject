@@ -114,20 +114,19 @@ int move_up_level(int level) {
 	switch (level)
 	{
 	case 0:
-		return 1;
+		g_runningThread->level = 1;
+		g_runningThread->quanta = 2;
 		break;
 	case 1:
-		return 2;
+		g_runningThread->level = 2;
+		g_runningThread->quanta = 4;
 		break;
 	case 2:
-		return 3;
-		break;
-	case 3:
-		return 3;
+		g_runningThread->level = 3;
+		g_runningThread->quanta = 8;
 		break;
 	default:
 		printf("unclear how you passed in an invalid level... have a 3");
-		return 3;
 		break;
 	}
 }
@@ -443,7 +442,7 @@ clock_handler(void* arg) {
 			//move down to next level
 			movingThread->level = move_up_level(movingThread->level);		//set level
 			movingThread->quanta = quanta_from_level(movingThread->level);	//set new quanta
-			multilevel_queue_enqueue(movingThread, movingThread->level);	//append to next level
+			multilevel_queue_enqueue(movingThread, movingThread->level, movingThread);	//append to next level
 																			//running thread done for now, move to idle thread
 			g_runningThread = g_idleThread;
 			//switch to idle stack
@@ -491,6 +490,12 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	//g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[0];	//start at queue 0
 	g_current_level = 0; //set to priority 0
 	g_quantaCountdown = 80;	//queue 0 goes for 80 quanta
+	
+	/*
+	//current level queue pointer and quanta countdown
+	queue_t** temp = multilevel_queue_levels(g_ml_runQueue);
+	g_runQueue = temp[0];	//start at queue 0
+	g_quantaCountdown = 80;					//queue 0 goes for 80 quanta*/
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
