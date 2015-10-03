@@ -16,20 +16,9 @@
 
 struct multilevel_queue {
 	int num_levels;
-	int items;
 	queue_t** queues; //NOTE: we want an array of queues, I think this is the way to do it, though we may only need it to be a pointer?
 };
 
-/*returns the array of queues associated with the multilevel queue*/
-queue_t** multilevel_queue_levels(multilevel_queue_t* mlq) {
-	return mlq->queues;
-}
-
-/*returns the number of total items in the multilevel queue, -1 if error*/
-int multilevel_queue_items(multilevel_queue_t* mlq) {
-	if (mlq == NULL) return -1;
-	return mlq->items;
-}
 /*
  * Returns an empty multilevel queue with number_of_levels levels.
  * Returns NULL on error.
@@ -43,7 +32,6 @@ multilevel_queue_t* multilevel_queue_new(int number_of_levels)
 
 	//malloc didn't fail! Do things
 	ret->num_levels = number_of_levels;
-	ret->items = 0;
 	ret->queues = (queue_t**)malloc(sizeof(queue_t*)*number_of_levels);
 	
 	if (ret->queues == NULL) //if malloc failed
@@ -64,7 +52,6 @@ multilevel_queue_t* multilevel_queue_new(int number_of_levels)
 			for (y = 0; y < x; y++)	queue_free(ret->queues[y]);
 
 			free(ret);
-
 			return NULL;
 		}
 	}
@@ -80,16 +67,9 @@ int multilevel_queue_enqueue(multilevel_queue_t* queue, int level, void* item)
 	//validate inputs
 	if (queue == NULL || level < 0 || level >= queue->num_levels) return -1;
 
-	int good;
 	//append returns 0 or -1, as enqueue is supposed to 
-	good = queue_append(queue->queues[level], item);
-	if (good == 0)
-	{
-		//success!
-		queue->items++;
-	}
-	//will be -1 if dequeueing failed, else 0
-	return good;
+	return queue_append(queue->queues[level], item);
+
 }
 
 /*
@@ -108,11 +88,7 @@ int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
 	int currLevel = level;
 	while (searchedInputLevel == false || currLevel != level) // if input level has not been searched or it has not reach the input level again
 	{
-		if (queue_dequeue(queue->queues[level], item) == 0)  // if successfully dequeued, return its level
-		{
-			queue->items--;
-			return currLevel;
-		}
+		if (queue_dequeue(queue->queues[level], item) == 0) return currLevel; // if successfully dequeued, return its level
 		searchedInputLevel = true;	// the first input level has been searched
 		currLevel++;
 		if (currLevel >= queue->num_levels) currLevel -= queue->num_levels; // wrap around
@@ -142,4 +118,20 @@ int multilevel_queue_free(multilevel_queue_t* queue)
 	free(queue->queues); //free queues
 	free(queue); //free multiqueue
 	return retVal;
+}
+
+int multilevel_queue_length(const multilevel_queue_t* mlq)
+{
+	//validate input
+	if (mlq == NULL) return -1;
+
+	int totalCount = 0;
+	int k;
+	for (k = 0; k < mlq->num_levels; k++) { //iterate through all queues and add up their lengths
+		int currCount = queue_length(mlq->queues[k]);
+		if (currCount == -1) return -1; //if error occurs, return error
+		else totalCount += currCount;
+	}
+
+	return totalCount;
 }
