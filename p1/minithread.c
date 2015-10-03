@@ -244,7 +244,7 @@ minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* w
 	mt->threadId = g_threadIdCounter++;
 	if (whichQueue != NULL) //if thread needs to be added to queue, add it
 	{
-		int appendSuccess = multilevel_queue_enqueue(whichQueue, 0, mt);
+		int appendSuccess = multilevel_queue_enqueue(g_ml_runQueue, 0, mt);
 		AbortGracefully(appendSuccess != 0, "Queue_append failed in minithread_create_helper()");
 	}
 	set_interrupt_level(old_level); //restore interrupt level as we leave crit section
@@ -253,7 +253,7 @@ minithread_create_helper(proc_t proc, arg_t arg, thread_state status, queue_t* w
 
 minithread_t*
 minithread_fork(proc_t proc, arg_t arg) {
-	return minithread_create_helper(proc, arg, READY, g_ml_runQueue); //set status to READY, add to ml run queue
+	return minithread_create_helper(proc, arg, READY, g_runQueue); //set status to READY, add to ml run queue
 }
 
 minithread_t*
@@ -304,7 +304,7 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
 																		   //case where mlqueue is outta threads, switch to idle queue
-	else if (g_ml_runQueue->items == 0)
+	else if (multilevel_queue_items(g_ml_runQueue) == 0)
 	{
 		if (g_runningThread == g_idleThread) { //if the running thread is already the idle thread, return
 			set_interrupt_level(old_level); //restore old interrupt level
@@ -356,11 +356,11 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 		{
 			if (yieldingThread->level < 3)
 			{
-				int appendSuccess = multilevel_queue_enqueue(whichQueue, yieldingThread->level + 1, yieldingThread);
+				int appendSuccess = multilevel_queue_enqueue(g_ml_runQueue, yieldingThread->level + 1, yieldingThread);
 				AbortGracefully(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
 			}
 		}
-		int appendSuccess = multilevel_queue_enqueue(whichQueue, yieldingThread->level, yieldingThread);
+		int appendSuccess = multilevel_queue_enqueue(g_ml_runQueue, yieldingThread->level, yieldingThread);
 		AbortGracefully(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
 	}
 
@@ -382,7 +382,7 @@ the ready queue.  Allows another thread to run. */
 void
 minithread_yield() {
 	//if idle or reaper thread, don't add to any queue, otherwise, add to run queue
-	queue_t* whichQueue = is_idle_or_reaper(minithread_self()) ? NULL : g_ml_runQueue;
+	queue_t* whichQueue = is_idle_or_reaper(minithread_self()) ? NULL : g_runQueue;
 	minithread_yield_helper(READY, whichQueue);
 }
 
