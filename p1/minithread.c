@@ -321,19 +321,19 @@ minithread_yield_helper(thread_state status, queue_t* whichQueue) {
 		//current queue out of threads? switch to next one
 		level_queue_switch();
 		dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
-		if (dequeueSuccess != 0)
-		{
-			//still no threads? keep on switchin'
-			level_queue_switch();
-			dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
-			if (dequeueSuccess != 0)
-			{
-				//still? cmon now.
-				level_queue_switch();
-				dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
-				//if still no threads after this chunk... well... things went wrong. Very wrong.
-			}
-		}
+		//if (dequeueSuccess != 0)
+		//{
+		//	//still no threads? keep on switchin'
+		//	level_queue_switch();
+		//	dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
+		//	if (dequeueSuccess != 0)
+		//	{
+		//		//still? cmon now.
+		//		level_queue_switch();
+		//		dequeueSuccess = multilevel_queue_dequeue(g_ml_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
+		//		//if still no threads after this chunk... well... things went wrong. Very wrong.
+		//	}
+		//}
 		AbortGracefully(dequeueSuccess != 0, "Queue_dequeue error in minithread_yield_helper()");
 		assert(g_runningThread != NULL && g_runningThread->status == READY);
 		

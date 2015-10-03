@@ -15,11 +15,11 @@ typedef struct node {
 	uint64_t order; //priority of the node, lower order means it should be closer to the head. Non priority queue usage will ignore this.
 }node_t;
 
-typedef struct queue {
+struct queue {
 	node_t* head;//ptr to first node
 	node_t* tail;//ptr to last node
 	int length;//size
-}queue_t;
+};
 
 queue_t* queue_new() {
 	queue_t* q = malloc(sizeof(queue_t));
