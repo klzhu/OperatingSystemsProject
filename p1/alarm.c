@@ -21,7 +21,7 @@
 // ---- Global variables ---- //
 extern const int INTERRUPT_PERIOD_IN_MILLISECONDS; //clock interrupt period in milliseconds
 extern uint64_t g_interruptCount; //global counter to count how many interrupts has passed. This value should not overflow for years.
-extern queue_t* g_alarmsQueue = NULL; //global queue that holds our alarms in sorted order according to when they should be set off
+queue_t* g_alarmsQueue = NULL; //global queue that holds our alarms in sorted order according to when they should be set off
 
 //struct for our alarm
 typedef struct alarm {
