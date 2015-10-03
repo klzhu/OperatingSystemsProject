@@ -43,32 +43,35 @@
 //Clock interrupt period in millseconds
 const int INTERRUPT_PERIOD_IN_MILLISECONDS = 100; // set to 100ms
 
-												  // ----- Global Variables ------ //
-minithread_t* g_runningThread = NULL;	//points to currently running thread
-minithread_t* g_idleThread = NULL;		//our idle thread that runs if no threads are left to run
-minithread_t* g_reaperThread = NULL;	//thread to clean up threads in the zombie queue
+//number of priority levels for our multilevel queue
+const int NUM_LEVELS = 4;
 
-queue_t* g_runQueue = NULL;			//global queue for threads waiting to run
-queue_t* g_zombieQueue = NULL;		//global queue for finished threads waiting to be cleaned up
+// ----- Global Variables ------ //
+minithread_t* g_runningThread = NULL; //points to currently running thread
+minithread_t* g_idleThread = NULL; //our idle thread that runs if no threads are left to run
+minithread_t* g_reaperThread = NULL; //thread to clean up threads in the zombie queue
 
-multilevel_queue_t* g_ml_runQueue = NULL;	//global ml queue for threads waiting to run
+queue_t* g_runQueue = NULL;	//global queue for threads waiting to run
+queue_t* g_zombieQueue = NULL; //global queue for finished threads waiting to be cleaned up
 
-int g_threadIdCounter = 0;		//counter for creating unique threadIds
-int g_current_level = 0;		//tracks current level of queue within multilevel queue
+multilevel_queue_t* g_ml_runQueue = NULL; //global ml queue for threads waiting to run
 
-uint64_t g_interruptCount = 0;		//global counter to count how many interrupts has passed. This value should not overflow for years.
-uint64_t g_quantaCountdown = 80;	//global counter to keep track of how many quanta pass until runQueue switches.
+int g_threadIdCounter = 0; //counter for creating unique threadIds
+int g_current_level = 0; //tracks current level of queue within multilevel queue
+int g_quantaCountdown = 0; //global counter to keep track of how many quanta pass until runQueue switches.
 
-									//Thread statuses
-typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // ready indicates scheduled to run.
+uint64_t g_interruptCount = 0; //global counter to count how many interrupts has passed. This value should not overflow for years.
+
+//Thread statuses
+typedef enum { RUNNING, READY, WAIT, DONE } thread_state; //ready indicates scheduled to run.
 
 typedef struct minithread {
-	int threadId;				//JH unique minithread ID
-	stack_pointer_t stackbase;	//JH pointer to base of thread's stack
-	stack_pointer_t stacktop;	//JH pointer to top of thread's stack
-	thread_state status;		//JH current thread status
-	int level;					//JH current level within multilevel queue scheduler
-	int quanta;					//JH current quanta left
+	int threadId;				//unique minithread ID
+	stack_pointer_t stackbase;	//pointer to base of thread's stack
+	stack_pointer_t stacktop;	//pointer to top of thread's stack
+	thread_state status;		//current thread status
+	int level;					//current level within multilevel queue scheduler
+	int quanta;					//current quanta left
 } minithread;
 
 
@@ -136,25 +139,25 @@ void level_queue_switch() {
 	case 0 :
 		g_current_level = 1;
 		g_quantaCountdown = 40;
-		g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[1];
+		//runQueue = (multilevel_queue_levels(g_ml_runQueue))[1];
 		break;
 	case 1:
 		g_current_level = 2;
 		g_quantaCountdown = 24;
-		g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[2];
+		//g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[2];
 		break;
 	case 2:
 		g_current_level = 3;
 		g_quantaCountdown = 16;
-		g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[3];
+		//g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[3];
 		break;
 	case 3:
 		g_current_level = 0;
 		g_quantaCountdown = 80;
-		g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[0];
+		//g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[0];
 		break;
 	default:
-		break;
+		AbortGracefully(true, "Reached an unreachable level in level_queue_switch()");
 	}
 }
 
@@ -377,6 +380,21 @@ minithread_stop() {
 	minithread_yield_helper(WAIT, NULL);
 }
 
+void
+minithread_scheduler() {
+	//handle lowering of global quanta switch
+	g_quantaCountdown--;
+	if (g_quantaCountdown == 0)
+	{
+		level_queue_switch();
+	}
+
+	//handle lowering of thread quanta
+	assert(g_runningThread != NULL);
+	g_runningThread->quanta--; 
+	if (g_runningThread->quanta == 0)
+}
+
 /*Forces the caller to relinquish the processor and be put to the end of
 the ready queue.  Allows another thread to run. */
 void
@@ -415,14 +433,6 @@ clock_handler(void* arg) {
 	//doesn't apply to the idle thread
 	if (g_runningThread != g_idleThread)
 	{
-		//queue quanta logic
-		g_quantaCountdown--;
-		if (g_quantaCountdown == 0)
-		{
-			//SWITCH LOGIC
-			level_queue_switch();
-			//call minithread yield here?
-		}
 
 		//thread quanta logic
 		g_runningThread->quanta--;
@@ -466,7 +476,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	are initialized.*/
 
 	//initialize global variables
-	g_ml_runQueue = multilevel_queue_new(4); AbortGracefully(g_ml_runQueue == NULL, "Failed to initialize g_ml_runQueue in minithread_system_initialize()");
+	g_ml_runQueue = multilevel_queue_new(NUM_LEVELS); AbortGracefully(g_ml_runQueue == NULL, "Failed to initialize g_ml_runQueue in minithread_system_initialize()");
 	g_zombieQueue = queue_new(); AbortGracefully(g_zombieQueue == NULL, "Failed to initialize g_zombieQueue in minithread_system_initialize()");
 
 	g_threadIdCounter = 0;
@@ -477,9 +487,10 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg) {
 	g_idleThread = minithread_create_helper(idle_thread_method, NULL, READY, NULL); AbortGracefully(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
 	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL); AbortGracefully(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
 
-	//current level queue pointer and quanta countdown
-	g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[0];	//start at queue 0
-	g_quantaCountdown = 80;					//queue 0 goes for 80 quanta
+	//initialize initial level priority and quanta countdown
+	//g_runQueue = (multilevel_queue_levels(g_ml_runQueue))[0];	//start at queue 0
+	g_current_level = 0; //set to priority 0
+	g_quantaCountdown = 80;	//queue 0 goes for 80 quanta
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	g_runningThread->status = RUNNING;
