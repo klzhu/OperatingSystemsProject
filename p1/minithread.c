@@ -388,10 +388,13 @@ minithread_scheduler() {
 		level_queue_switch();
 	}
 
-	//handle lowering of thread quanta
+	//handle lowering of thread quanta. This does not apply to reaper or idle thread or threads on the last priority level already
 	assert(g_runningThread != NULL);
-	g_runningThread->quanta--; 
-	if (g_runningThread->quanta == 0)
+	if (!is_idle_or_reaper(g_runningThread) || g_runningThread->level != 3)
+	{
+		g_runningThread->quanta--;
+		if (g_runningThread->quanta == 0)
+	}
 }
 
 /*Forces the caller to relinquish the processor and be put to the end of

@@ -25,8 +25,9 @@ queue_t** multilevel_queue_levels(multilevel_queue_t* mlq) {
 	return mlq->queues;
 }
 
-/*returns the number of total items in the multilevel queue*/
+/*returns the number of total items in the multilevel queue, -1 if error*/
 int multilevel_queue_items(multilevel_queue_t* mlq) {
+	if (mlq == NULL) return -1;
 	return mlq->items;
 }
 /*
