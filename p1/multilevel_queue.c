@@ -20,6 +20,10 @@ struct multilevel_queue {
 	queue_t** queues; //NOTE: we want an array of queues, I think this is the way to do it, though we may only need it to be a pointer?
 };
 
+queue_t** multilevel_queue_levels(multilevel_queue_t* mlq) {
+	return mlq->queues;
+}
+
 /*
  * Returns an empty multilevel queue with number_of_levels levels.
  * Returns NULL on error.
