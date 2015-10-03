@@ -243,7 +243,7 @@ minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
 
 	assert(multilevel_queue_length(g_runQueue) >= 0); // self check
 
-													  //point g_runningThread thread we'll context switch to
+  	//point g_runningThread thread we'll context switch to
 	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
 	else if (multilevel_queue_length(g_runQueue) == 0) {
 		if (g_runningThread == g_idleThread) { //if the running thread is already the idle thread, return
@@ -275,7 +275,7 @@ minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
 	yieldingThread->status = status;
 	if (whichQueue == ZOMBIE_QUEUE) // put the yielding thread to zombie queue
 	{
-		int appendSuccess = queue_enqueue(g_zombieQueue, yieldingThread);
+		int appendSuccess = queue_append(g_zombieQueue, yieldingThread);
 		AbortGracefully(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
 	}
 	else if (whichQueue == RUN_QUEUE) { // put the yielding thread to run queue
