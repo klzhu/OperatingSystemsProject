@@ -69,7 +69,7 @@ register_alarm(int delay, alarm_handler_t alarm, void *arg) {
 		g_smallestInterruptToWake = newAlarm->interruptToWake;
 
 	//restore interrupts to old level as we exit critical section
-	set_intterupt_level(old_level);
+	set_interrupt_level(old_level);
 
 	return newAlarm;
 }
