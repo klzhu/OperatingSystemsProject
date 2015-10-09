@@ -379,7 +379,6 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg)
 void
 minithread_sleep_with_timeout(int delay)
 {
-	set_interrupt_level(DISABLED); //disable interrupt as we add a new alarm to the global queue of alarms
 	alarm_id newAlarm = register_alarm(delay, alarm_handler_function, minithread_self());
 	AbortGracefully(newAlarm == NULL, "Failed to register an alarm in minithread_sleep_with_timeout()");
 	minithread_stop(); //give up processor

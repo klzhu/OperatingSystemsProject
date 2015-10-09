@@ -84,15 +84,12 @@ int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
 	if (queue == NULL || level < 0 || level >= queue->num_levels) return -1;
 
 	// Dequeue the first item by wrapping around levels starting from the input level
-	bool searchedInputLevel = false;  // indicate if the input level queue has been searched or not
 	int currLevel = level;
-	while (searchedInputLevel == false || currLevel != level) // if input level has not been searched or it has not reach the input level again
-	{
+	do {
 		if (queue_dequeue(queue->queues[currLevel], item) == 0) return currLevel; // if successfully dequeued, return its level
-		searchedInputLevel = true;	// the first input level has been searched
 		currLevel++;
 		if (currLevel >= queue->num_levels) currLevel -= queue->num_levels; // wrap around
-	}
+	} while (currLevel != level);
 
 	return -1; //if we left the while loop and has not returned, there was nothing to dequeue
 }
