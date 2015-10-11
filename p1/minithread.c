@@ -21,15 +21,8 @@
 #include "alarm.h"
 #include "queue.h"
 #include "multilevel_queue.h"
-
-
-/* Macro to fail gracefully. If condition, fail and give error message */
-#define AbortGracefully(cond,message)                      	\
-    if (cond) {                                             \
-        printf("Abort: %s:%d, MSG:%s\n",                  	\
-               __FILE__, __LINE__, message); 				\
-        exit(1);                                             \
-	    }
+#include "network.h"
+#include "common.h"
 
 /*
 * A minithread should be defined either in this file or in a private
@@ -331,6 +324,16 @@ clock_handler(void* arg)
 }
 
 /*
+* Placeholder for network handler for now
+*/
+void
+network_handler(void* arg)
+{
+	printf("test\n");
+}
+
+
+/*
 * Initialization.
 *
 *      minithread_system_initialize:
@@ -370,6 +373,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg)
 	g_runningThread->status = RUNNING;
 
 	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service, enabled by the context switch
+	int netInitSuccess = network_initialize(network_handler); AbortGracefully(netInitSuccess == -1, "Network_initialize failed in minithread_system_initialize()"); //intialize network 
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
 }
 

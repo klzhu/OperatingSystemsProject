@@ -8,15 +8,7 @@
 #include "minithread.h"
 #include "queue.h"
 #include "synch.h"
-
-
-/* Macro to fail gracefully. If condition, fail and give error message */
-#define AbortGracefully(cond,message)                      	\
-    if (cond) {                                             \
-        printf("Abort: %s:%d, MSG:%s\n",                  	\
-               __FILE__, __LINE__, message); 				\
-        exit(1);                                             \
-	}
+#include "common.h"
 
 // ---- Global variables ---- //
 extern const int INTERRUPT_PERIOD_IN_MILLISECONDS; //clock interrupt period in milliseconds
