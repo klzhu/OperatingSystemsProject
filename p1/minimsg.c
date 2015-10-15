@@ -4,21 +4,15 @@
 #include "minimsg.h"
 #include "queue.h"
 #include "synch.h"
-#include "common.h"
+#include "defs.h"
 #include "interrupts.h"
-
- //IN PROGRESS - we don't alter the length of the queue with this function and queue_free returns an error if the length isn't 0
-void deleteIncomingData(void* data)
-{
-	free(data);
-}
 
 // ---- Global Variables ---- //
 int g_boundPortCounter = 0;
 
 struct miniport
 {
-	char port_type;
+	char port_type; //b indicates bounded port, u indicates unbounded port
 	int port_number; 
 
 	union {
@@ -27,7 +21,7 @@ struct miniport
 			semaphore_t *datagrams_ready;
 		} unbound_t;
 		struct bound {
-			network_address_t* remote_addr;
+			network_address_t remote_addr;
 			int remote_unbound_port;
 		} bound_t;
 	};
@@ -87,7 +81,8 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 
 	b_miniport->port_type = 'b'; //set miniport type to bounded
 	b_miniport->bound_t.remote_unbound_port = remote_unbound_port_number;
-	b_miniport->bound_t.remote_addr = addr;
+	b_miniport->bound_t.remote_addr[0] = addr[0];
+	b_miniport->bound_t.remote_addr[1] = addr[1];
 
 	return b_miniport;
 }
@@ -96,14 +91,14 @@ void
 miniport_destroy(miniport_t* miniport)
 {
 	//validate input
-	if (miniport == NULL) return NULL;
+	AbortOnCondition(miniport == NULL, "Null argument miniport in miniport_destroy()");
+	assert(miniport->unbound_t.datagrams_ready != NULL && miniport->unbound_t.incoming_data != NULL); //self check
 
 	//check if unbounded port, if so, we must free our queue and sema
 	if (miniport->port_type == 'u')
 	{
-		//empty our queue and free it
-		int qRemoveNodesSuccess = queue_iterate(miniport->unbound_t.incoming_data, deleteIncomingData, NULL); AbortGracefully(qRemoveNodesSuccess == -1, "Queue_iterate failed in miniport_destroy()");
-		int queueFreeSuccess = queue_free(miniport->unbound_t.incoming_data); AbortGracefully(queueFreeSuccess == -1, "Queue_free failed in miniport_destroy()");
+		//free our queue
+		int queueFreeSuccess = queue_free_nodes_and_queue(miniport->unbound_t.incoming_data); AbortOnCondition(queueFreeSuccess == -1, "Queue_free failed in miniport_destroy()");
 
 		//free semaphore
 		semaphore_destroy(miniport->unbound_t.datagrams_ready);
@@ -116,7 +111,7 @@ int
 minimsg_send(miniport_t* local_unbound_port, miniport_t* local_bound_port, minimsg_t* msg, int len)
 {
 	//validate input 
-	if (local_unbound_port == NULL || local_bound_port == NULL || msg == NULL || len < 0) return NULL;
+	if (local_unbound_port == NULL || local_bound_port == NULL || msg == NULL || len < 0) return -1;
 
 
 
@@ -125,10 +120,11 @@ minimsg_send(miniport_t* local_unbound_port, miniport_t* local_bound_port, minim
     return 0;
 }
 
-int minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_port, minimsg_t* msg, int *len)
+int
+minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_port, minimsg_t* msg, int *len)
 {
-	//validate input - should len be a pointer or an int?
-	if (local_unbound_port == NULL|| msg == NULL || len < 0) return NULL;
+	//validate input
+	if (local_unbound_port == NULL|| msg == NULL || len == NULL) return -1;
 
     return 0;
 }

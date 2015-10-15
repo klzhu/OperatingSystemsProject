@@ -327,7 +327,7 @@ clock_handler(void* arg)
 * Placeholder for network handler for now
 */
 void
-network_handler(void* arg)
+network_handler(network_interrupt_arg_t* arg)
 {
 	printf("test\n");
 }

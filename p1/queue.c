@@ -142,6 +142,7 @@ queue_iterate(queue_t *queue, func_t f, void* item) {
 	return 0;
 }
 
+//this method only frees the queue and assumes the nodes have already been freed (P2 spec)
 int
 queue_free(queue_t *queue) {
 	//if queue is null or non empty, return -1
@@ -149,6 +150,25 @@ queue_free(queue_t *queue) {
 	
 	//otherwise, free queue and return 0
 	free(queue);
+	return 0;
+}
+
+//this method frees all the nodes as well as the queue itself (P1 and P3 spec)
+int
+queue_free_nodes_and_queue(queue_t *queue) {
+	//if queue is empty or null
+	if (queue == NULL) return 0;
+
+	node_t* curr = queue->head;
+	while (curr != NULL)
+	{
+		node_t* tempNext = curr->next;
+		free(curr);
+		curr = tempNext;
+	}
+
+	free(queue);
+
 	return 0;
 }
 
