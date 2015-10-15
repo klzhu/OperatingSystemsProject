@@ -1,14 +1,17 @@
 /*
  *  Implementation of minimsgs and miniports.
  */
+#include "bool.h"
 #include "minimsg.h"
 #include "queue.h"
 #include "synch.h"
 #include "defs.h"
 #include "interrupts.h"
 
+
 // ---- Global Variables ---- //
 int g_boundPortCounter = 0;
+bool g_boundedPortAvail[32768];
 
 struct miniport
 {
@@ -74,9 +77,30 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 
 	//disable interrupts as we set the miniport number and increment global counter
 	interrupt_level_t old_level = set_interrupt_level(DISABLED);
-	b_miniport->port_number = g_boundPortCounter;
-	g_boundPortCounter++;
-	if (g_boundPortCounter > 65535) g_boundPortCounter = 32768; //reset counter if we reach end of port space
+	if (g_boundPortCounter > 65535) //if we've reached the end of our port space, we need to search for an available port number
+	{
+		int i;
+		int freePortNum = -1;
+		for (i = 0; i < 32768; i++)
+		{
+			if (g_boundedPortAvail[i] == true)
+			{
+				freePortNum = i + 32768; //if we found an available port, set out port number to that
+				g_boundedPortAvail[i] = false; //set it to false because we're going to use it
+				break;
+			}
+		}
+
+		if (freePortNum == -1) return NULL; //if we didn't find an available port, return NULL
+		else b_miniport->port_number = freePortNum;
+	}
+	else //otherwise, set our port number to g_boundPortCounter
+	{
+		b_miniport->port_number = g_boundPortCounter;
+		g_boundedPortAvail[g_boundPortCounter - 32768] = false;
+		g_boundPortCounter++;
+	}
+
 	set_interrupt_level(old_level); //restore interrupt level
 
 	b_miniport->port_type = 'b'; //set miniport type to bounded
@@ -103,6 +127,11 @@ miniport_destroy(miniport_t* miniport)
 		//free semaphore
 		semaphore_destroy(miniport->unbound_t.datagrams_ready);
 	}
+	else //if bounded port, we must update our g_boundedPortAvail
+	{
+		int portNum = miniport->port_number;
+		g_boundedPortAvail[portNum - 32768] = true;
+	}
 
 	free(miniport);
 }
@@ -125,6 +154,15 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 {
 	//validate input
 	if (local_unbound_port == NULL|| msg == NULL || len == NULL) return -1;
+
+	assert(local_unbound_port->port_type == 'u' && local_unbound_port->unbounded_t.datagrams_ready != NULL && local_unbound_port->unbounded_t.datagrams_ready != NULL);
+
+	semaphore_P(local_unbound_port->unbound_t.datagrams_ready); //P the semaphore, if the count is 0 we're blocked until packet arrives
+
+	//once a packet arrives and we've woken
+	//create a bound port that replys directly back to sender
+	miniport_create_bound
+
 
     return 0;
 }
