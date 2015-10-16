@@ -7,11 +7,17 @@
 #include "synch.h"
 #include "defs.h"
 #include "interrupts.h"
+ #include "miniheader.h"
 
+// ---- Constants ---- //
+const int BOUNDED_PORT_START = 32768; //The beginning port number for bounded port
+const int BOUNDED_PORT_END = 65535; //The end port number for bounded 
+const int UNBOUNDED_PORT_START = 0; //The beginning port number for unbounded port
+const int UNBOUNDED_PORT_END = 32767; //The end port number for unbounded port
 
 // ---- Global Variables ---- //
 int g_boundPortCounter = 0;
-bool g_boundedPortAvail[32768];
+bool g_boundedPortAvail[BOUNDED_PORT_END - BOUNDED_PORT_START + 1];
 
 struct miniport
 {
@@ -33,14 +39,14 @@ struct miniport
 void
 minimsg_initialize()
 {
-	g_boundPortCounter = 32768; //bounded ports range from 32768 - 65535
+	g_boundPortCounter = BOUNDED_PORT_START; //bounded ports range from 32768 - 65535
 }
 
 miniport_t*
 miniport_create_unbound(int port_number)
 {
 	//ensure that port_number is valid
-	if (port_number < 0 || port_number > 32767) return NULL;
+	if (port_number < UNBOUNDED_PORT_START || port_number > UNBOUNDED_PORT_END) return NULL;
 
 	miniport_t* u_miniport = malloc(sizeof(miniport_t));
 	if (u_miniport == NULL) return NULL; //malloc errored
@@ -92,7 +98,7 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 		}
 
 		if (freePortNum == -1) return NULL; //if we didn't find an available port, return NULL
-		else b_miniport->port_number = freePortNum;
+		else b_miniport->port_number = freePortNum; //otherwise, set our miniport num to the available port num
 	}
 	else //otherwise, set our port number to g_boundPortCounter
 	{
@@ -139,14 +145,47 @@ miniport_destroy(miniport_t* miniport)
 int
 minimsg_send(miniport_t* local_unbound_port, miniport_t* local_bound_port, minimsg_t* msg, int len)
 {
-	//validate input 
-	if (local_unbound_port == NULL || local_bound_port == NULL || msg == NULL || len < 0) return -1;
+	//validate input
+	if (local_unbound_port == NULL || local_bound_port == NULL || msg == NULL || len < 0 || len > MINIMSG_MAX_MSG_SIZE) return -1;
 
+	//generate the header
+	/*mini_header_t mini_header;
+	mini_header.protocol = PROTOCOL_MINIDATAGRAM;*/
 
+	char *header;
+	header = (char*) malloc(sizeof(mini_header_t));
+	if (header == NULL) return -1; //if malloc failed, return error code
 
-	//should call network_send_pkt to send datagrams
+	header[0] = PROTOCOL_MINIDATAGRAM + '0'; //convert protocol to a char, store it in header
 
-    return 0;
+	network_address_t my_address;
+	network_get_my_address(my_address);
+
+	//pack up my address into the header array
+	pack_unsigned_int(header+1, my_address[0]);
+	pack_unsigned_int(header+5, my_address[1]);
+
+	//pack up source port into header
+	pack_unsigned_short(header+9, (unsigned short) local_unbound_port->port_number);
+
+	//pack up destination address into header
+	assert(local_bound_port->bound_t.remote_addr != NULL); 
+	network_address_t dest_address;
+	dest_address[0] = local_unbound_port->bound_t.remote_addr[0];
+	dest_address[1] = local_unbound_port->bound_t.remote_addr[1];
+
+	pack_unsigned_int(header+11, dest_address[0]);
+	pack_unsigned_int(header+15, dest_address[1]);
+
+	//pack up dest port into header
+	pack_unsigned_short(header+19, (unsigned short) local_bound_port->bounded_t.remote_unbound_port);
+	
+	//send message now
+	int sendSuccess = network_send_pkt(dest_address, 21, header, len, msg);
+
+	//free our header
+	free(header);
+    return sendSuccess;
 }
 
 int
@@ -161,7 +200,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 
 	//once a packet arrives and we've woken
 	//create a bound port that replys directly back to sender
-	miniport_create_bound
+	*new_local_bound_port = miniport_create_bound()
 
 
     return 0;
