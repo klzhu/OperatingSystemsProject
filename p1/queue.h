@@ -56,7 +56,7 @@ int queue_free (queue_t*);
 * Free the nodes of a queue, the queue and return 0 (success) or -1 (failure).
 * Failure cases include NULL queue
 */
-int queue_free_nodes_and_queue(queue_t *queue) {
+int queue_free_nodes_and_queue(queue_t *queue);
 
 /*
  * Return the number of items in the queue, or -1 if an error occured
