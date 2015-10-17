@@ -372,6 +372,7 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg)
 
 	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service, enabled by the context switch
 	int netInitSuccess = network_initialize(minimsg_network_handler); AbortOnCondition(netInitSuccess == -1, "Network_initialize failed in minithread_system_initialize()"); //intialize network 
+	minimsg_initialize(); //initialize our minimsg layer
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
 }
 

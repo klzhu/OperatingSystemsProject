@@ -248,15 +248,15 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	int packetSize = dequeuedPacket->size;
 
 	//get our header and message from the dequeued packet
-	mini_header_t *receivedHeader = NULL;
-	memcpy(receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_t));
+	mini_header_t receivedHeader;
+	memcpy(&receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_t));
 	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), packetSize - sizeof(mini_header_t));
 	
 	//if the length of the message received was longer than *len, return *len. Otherwise, set *len to the length of our received message
 	if (packetSize - sizeof(mini_header_t) <= *len) *len = packetSize - sizeof(mini_header_t);
 
 	//create our new local bound port pointed back to the sender
-	int sourcePort = (int) unpack_unsigned_short((*receivedHeader).source_port);
+	int sourcePort = (int) unpack_unsigned_short((char*)&receivedHeader.source_port);
 	assert(sourcePort >= BOUNDED_PORT_START && sourcePort <= BOUNDED_PORT_END); //make sure source port num is valid
 	*new_local_bound_port = miniport_create_bound(sender_addr, sourcePort);
 	if (*new_local_bound_port == NULL) return -1;
@@ -270,9 +270,10 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
 
 	//strip header from packet and get destination port number
-	mini_header_t *receivedHeader = NULL;
-	memcpy(receivedHeader, arg->buffer, sizeof(mini_header_t));
-	int destPortNumber = (int)unpack_unsigned_short((char*)receivedHeader);
+	mini_header_t receivedHeader;
+	memcpy(&receivedHeader, arg->buffer, sizeof(mini_header_t));
+	int destPortNumber = (int)unpack_unsigned_short((char*)&receivedHeader);
+
 	
 	//validate this is a valid unbounded port, abort the program if it is not
 	AbortOnCondition(destPortNumber < UNBOUNDED_PORT_START || destPortNumber > UNBOUNDED_PORT_END, "Received packet destination port not valid in minimsg_network_handler()");
@@ -290,6 +291,6 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	AbortOnCondition(appendSuccess == -1, "Queue_append failed in minimsg_network_handler()");
 
 	semaphore_V(g_unboundedPortPtrs[destPortNumber]->unbound_port.datagrams_ready);
-	
+
 	set_interrupt_level(old_level); //restore interrupt level
 }
