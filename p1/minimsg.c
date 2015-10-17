@@ -273,34 +273,23 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	mini_header_t *receivedHeader = NULL;
 	memcpy(receivedHeader, arg->buffer, sizeof(mini_header_t));
 	int destPortNumber = (int)unpack_unsigned_short((char*)receivedHeader);
-	//validate this is a valid unbounded port
-	if (destPortNumber < UNBOUNDED_PORT_START || destPortNumber > UNBOUNDED_PORT_END)
-	{
-		set_interrupt_level(old_level); //restore interrupt level
-		return -1;
-	}
+	
+	//validate this is a valid unbounded port, abort the program if it is not
+	AbortOnCondition(destPortNumber < UNBOUNDED_PORT_START || destPortNumber > UNBOUNDED_PORT_END, "Received packet destination port not valid in minimsg_network_handler()");
 
 	//if the unbounded port has not been initialized, create it
 	if (g_unboundedPortPtrs[destPortNumber] == NULL)
 	{
 		g_unboundedPortPtrs[destPortNumber] = miniport_create_unbound(destPortNumber);
-		if (g_unboundedPortPtrs[destPortNumber] == NULL) //if we failed to create the unbounded port, return -1
-		{
-			set_interrupt_level(old_level); //restore interrupt level
-			return -1;
-		}
+		AbortOnCondition(g_unboundedPortPtrs[destPortNumber] == NULL, "miniport_create_unbound failed in minimsg_network_handler()");
 	}
 
 	//queue the packet and V the semaphore
 	assert(g_unboundedPortPtrs[destPortNumber]->port_type == 'u' && g_unboundedPortPtrs[destPortNumber]->unbound_port.datagrams_ready != NULL && g_unboundedPortPtrs[destPortNumber]->unbound_port.incoming_data != NULL); 
 	int appendSuccess = queue_append(g_unboundedPortPtrs[destPortNumber]->unbound_port.incoming_data, (void*)arg);
-	if (appendSuccess == -1)
-	{
-		set_interrupt_level(old_level); //restore interrupt level
-		return -1;
-	}
+	AbortOnCondition(appendSuccess == -1, "Queue_append failed in minimsg_network_handler()");
+
 	semaphore_V(g_unboundedPortPtrs[destPortNumber]->unbound_port.datagrams_ready);
 	
 	set_interrupt_level(old_level); //restore interrupt level
-	return 0;
 }
