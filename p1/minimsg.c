@@ -60,8 +60,13 @@ miniport_create_unbound(int port_number)
 	//ensure that port_number is valid
 	if (port_number < UNBOUNDED_PORT_START || port_number > UNBOUNDED_PORT_END) return NULL;
 
+	interrupt_level_t old_level = set_interrupt_level(DISABLED);
 	//if the unbounded port has already been created, return reference to that port
-	if (g_unboundedPortPtrs[port_number] != NULL) return g_unboundedPortPtrs[port_number];
+	if (g_unboundedPortPtrs[port_number] != NULL)
+	{
+		set_interrupt_level(old_level);
+		return g_unboundedPortPtrs[port_number];
+	}
 
 	//if not, we must create the unbounded port
 	miniport_t* u_miniport = malloc(sizeof(miniport_t));
@@ -73,6 +78,7 @@ miniport_create_unbound(int port_number)
 	{
 		//free newly allocated space for miniport, return null
 		free(u_miniport);
+		set_interrupt_level(old_level);
 		return NULL;
 	}
 
@@ -82,6 +88,7 @@ miniport_create_unbound(int port_number)
 		//free newly allocated space for miniport and allocated space for sema, return NULL
 		free(datagrams_ready);
 		free(u_miniport);
+		set_interrupt_level(old_level);
 		return NULL;
 	}
 
@@ -96,6 +103,7 @@ miniport_create_unbound(int port_number)
 	//update our array of pointers for our unbounded ports MUST ADD THIS TO CRIT SECTION
 	g_unboundedPortPtrs[port_number] = u_miniport;
 
+	set_interrupt_level(old_level);
     return u_miniport;
 }
 
@@ -126,7 +134,11 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 			}
 		}
 
-		if (freePortNum == -1) return NULL; //if we didn't find an available port, return NULL
+		if (freePortNum == -1)
+		{
+			set_interrupt_level(old_level); //restore interrupt level
+			return NULL; //if we didn't find an available port, return NULL
+		}
 		else b_miniport->port_number = freePortNum; //otherwise, set our miniport num to the available port num
 	}
 	else //otherwise, set our port number to g_boundPortCounter
@@ -168,7 +180,9 @@ miniport_destroy(miniport_t* miniport)
 	else //if bounded port
 	{
 		int portNum = miniport->port_number;
+		interrupt_level_t old_level = set_interrupt_level(DISABLED);
 		g_boundedPortAvail[portNum - BOUNDED_PORT_START] = true; //set the avail of our bounded port to true
+		set_interrupt_level(old_level);
 	}
 
 	free(miniport);
@@ -254,11 +268,10 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 		return -1;
 	}
 
-	//if the unbounded port has not been initialized, return -1
+	//if the unbounded port has not been initialized, create it
 	if (g_unboundedPortPtrs[destPortNumber] == NULL)
 	{
-		set_interrupt_level(old_level); //restore interrupt level
-		return -1;
+		g_unboundedPortPtrs[destPortNumber] = miniport_create_unbound(destPortNumber);
 	}
 	else //otherwise, queue the packet and V the semaphore
 	{
