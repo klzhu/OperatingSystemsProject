@@ -65,4 +65,5 @@ int minimsg_send(miniport_t* local_unbound_port, miniport_t* local_bound_port, m
  */
 int minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_port, minimsg_t* msg, int *len);
 
+int minimsg_network_handler(network_interrupt_arg_t* arg);
 #endif /*__MINIMSG_H__*/
