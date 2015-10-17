@@ -247,7 +247,9 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	if (packetSize - sizeof(mini_header_t) <= *len) *len = packetSize - sizeof(mini_header_t);
 
 	//create our new local bound port pointed back to the sender
-	*new_local_bound_port = miniport_create_bound(sender_addr, (*receivedHeader).source_port);
+	int sourcePort = (int) unpack_unsigned_short((*receivedHeader).source_port);
+	assert(sourcePort >= 32768 && sourcePort <= BOUNDED_PORT_END); //make sure source port num is valid
+	*new_local_bound_port = miniport_create_bound(sender_addr, sourcePort);
 	if (*new_local_bound_port == NULL) return -1;
 
     return *len; //return data payload bytes received not inclusive of header
@@ -257,10 +259,10 @@ int
 minimsg_network_handler(network_interrupt_arg_t* arg)
 {
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
-	mini_header_t *receivedHeader;
+	mini_header_t *receivedHeader = NULL;
 	memcpy(receivedHeader, arg->buffer, sizeof(mini_header_t));
 
-	int destPortNumber = unpack_unsigned_short(receivedHeader);
+	int destPortNumber = (int)unpack_unsigned_short((char*)receivedHeader);
 	//validate this is a valid unbounded port
 	if (destPortNumber < UNBOUNDED_PORT_START || destPortNumber > UNBOUNDED_PORT_END)
 	{
@@ -285,4 +287,5 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 		semaphore_V(g_unboundedPortPtrs[destPortNumber]->unbound_t.datagrams_ready);
 	}
 	set_interrupt_level(old_level); //restore interrupt level
+	return 0;
 }

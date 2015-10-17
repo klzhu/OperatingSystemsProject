@@ -331,9 +331,7 @@ clock_handler(void* arg)
 void
 network_handler(network_interrupt_arg_t* arg)
 {
-	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
 	int handlerSuccess = minimsg_network_handler(arg); AbortGracefully(handlerSuccess == -1, "Network handler failed");
-	set_interrupt_level(old_level); //restore interrupt level
 }
 
 
