@@ -239,7 +239,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	int packetSize = dequeuedPacket->size;
 
 	//get our header and message from the dequeued packet
-	mini_header_t *receivedHeader;
+	mini_header_t *receivedHeader = NULL;
 	memcpy(receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_t));
 	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), packetSize - sizeof(mini_header_t));
 	
