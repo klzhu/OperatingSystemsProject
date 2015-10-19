@@ -21,6 +21,9 @@
 // ---- Global Variables ---- //
 int g_boundPortCounter = -1; //for incrementally assigning bounded ports
 bool g_boundedPortAvail[BOUNDED_PORT_END - BOUNDED_PORT_START + 1]; //track availability of bounded ports once g_boundPortCounter goes above max value
+semaphore_t* g_semaLock = NULL; // used as mutex to protect access to g_boundPortCounter & g_boundedPortAvail
+
+//g_unboundedPortPtrs is protected by disabling interrupt since it is touched in network interrupt handler
 miniport_t* g_unboundedPortPtrs[UNBOUNDED_PORT_END - UNBOUNDED_PORT_START + 1]; //tracks the pointers to all of our unbounded ports
 
 struct miniport
@@ -45,10 +48,9 @@ minimsg_initialize()
 {
 	g_boundPortCounter = BOUNDED_PORT_START; //bounded ports range from 32768 - 65535
 	memset(g_boundedPortAvail, 1, sizeof(g_boundedPortAvail)); //initialize array element to true, every port is avail when we initialize
-	for (int i = 0; i < UNBOUNDED_PORT_END - UNBOUNDED_PORT_START + 1; i++) //set array of unbounded port pointers to null
-	{
-		g_unboundedPortPtrs[i] = NULL;
-	}
+	memset(g_unboundedPortPtrs, 0, sizeof(g_unboundedPortPtrs)); //set array of unbounded port pointers to null
+	g_semaLock = semaphore_create(); AbortOnCondition(g_semaLock == NULL, "g_semaLock failed in minimsg_initialize()");
+	semaphore_initialize(g_semaLock, 1); //init sema to 1 (available).
 }
 
 miniport_t*
@@ -59,56 +61,42 @@ miniport_create_unbound(int port_number)
 	//ensure that port_number is valid
 	if (port_number < UNBOUNDED_PORT_START || port_number > UNBOUNDED_PORT_END) return NULL;
 
-	interrupt_level_t old_level = set_interrupt_level(DISABLED);
-	//if the unbounded port has already been created, return reference to that port
-	if (g_unboundedPortPtrs[port_number] != NULL)
-	{
-		set_interrupt_level(old_level);
-		return g_unboundedPortPtrs[port_number];
-	}
-
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //begin critical section
+	if (g_unboundedPortPtrs[port_number] == NULL) { //if the unbounded port has not been created, if it has been created, skip this and return reference
 	//if not, we must create the unbounded port
-	miniport_t* u_miniport = malloc(sizeof(miniport_t));
-	if (u_miniport == NULL)
-	{
-		set_interrupt_level(old_level);
-		return NULL; //malloc errored
+		miniport_t* u_miniport = malloc(sizeof(miniport_t));
+		if (u_miniport == NULL)
+		{
+			set_interrupt_level(old_level);
+			return NULL; //malloc errored
+		}
+		u_miniport->port_number = port_number;
+		u_miniport->port_type = 'u';
+
+		//create necessary semaphore and queue for unbounded miniport
+		u_miniport->unbound_port.datagrams_ready = semaphore_create();
+		if (u_miniport->unbound_port.datagrams_ready == NULL) //error creating our sema
+		{
+			free(u_miniport); //free newly allocated space for miniport
+			set_interrupt_level(old_level);
+			return NULL;
+		}
+
+		u_miniport->unbound_port.incoming_data = queue_new();
+		if (u_miniport->unbound_port.incoming_data == NULL) //error creating our queue
+		{
+			free(u_miniport->unbound_port.datagrams_ready); //free newly allocated space for sema
+			free(u_miniport); //free newly allocated space for miniport
+			set_interrupt_level(old_level);
+			return NULL;
+		}
+
+		semaphore_initialize(u_miniport->unbound_port.datagrams_ready, 0); //initialize our waiting sema
+		g_unboundedPortPtrs[port_number] = u_miniport; //update our array of pointers for our unbounded ports
 	}
-
-	//create necessary semaphore and queue for unbounded miniport
-	semaphore_t* datagrams_ready = semaphore_create();
-	if (datagrams_ready == NULL) //error creating our sema
-	{
-		//free newly allocated space for miniport, return null
-		free(u_miniport);
-		set_interrupt_level(old_level);
-		return NULL;
-	}
-
-	queue_t* incoming_data = queue_new();
-	if (incoming_data == NULL) //error creating our queue
-	{
-		//free newly allocated space for miniport and allocated space for sema, return NULL
-		free(datagrams_ready);
-		free(u_miniport);
-		set_interrupt_level(old_level);
-		return NULL;
-	}
-
-	semaphore_initialize(datagrams_ready, 0); //initialize our waiting sema
-
-	//update our array of pointers for our unbounded ports
-	g_unboundedPortPtrs[port_number] = u_miniport;
 
 	set_interrupt_level(old_level); //restore interrupt level as we leave critical section
-
-	//set our unbounded miniport
-	u_miniport->port_number = port_number;
-	u_miniport->port_type = 'u';
-	u_miniport->unbound_port.datagrams_ready = datagrams_ready;
-	u_miniport->unbound_port.incoming_data = incoming_data;
-
-    return u_miniport;
+    return g_unboundedPortPtrs[port_number];
 }
 
 miniport_t*
@@ -122,28 +110,25 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 	miniport_t* b_miniport = malloc(sizeof(miniport_t));
 	if (b_miniport == NULL) return NULL; //malloc errored
 
-	//disable interrupts as we set the miniport number and increment global counter
-	interrupt_level_t old_level = set_interrupt_level(DISABLED);
+	b_miniport->port_type = 'b'; //set miniport type to bounded
+	b_miniport->bound_port.remote_unbound_port = remote_unbound_port_number;
+	memcpy(&b_miniport->bound_port.remote_addr, &addr, sizeof(addr));
+
+	semaphore_P(g_semaLock); //critical section to access global variables g_boundPortCounter & g_boundedPortAvail
 	if (g_boundPortCounter > BOUNDED_PORT_END) //if we've reached the end of our port space, we need to search for an available port number
 	{
-		int i;
-		int freePortNum = -1;
-		for (i = 0; i < BOUNDED_PORT_START; i++)
-		{
-			if (g_boundedPortAvail[i] == true)
-			{
-				freePortNum = i + BOUNDED_PORT_START; //if we found an available port, set out port number to that
-				g_boundedPortAvail[i] = false; //set it to false because we're going to use it
-				break;
-			}
-		}
+		int k = 0;
+		while (k <= BOUNDED_PORT_END - BOUNDED_PORT_START && g_boundedPortAvail[k] == false)
+			k++;	// find the first element equaling true
 
-		if (freePortNum == -1)
-		{
-			set_interrupt_level(old_level); //restore interrupt level
-			return NULL; //if we didn't find an available port, return NULL
+		if (k > BOUNDED_PORT_END - BOUNDED_PORT_START) { //if no port is available
+			free(b_miniport);	// free the newly created bound port
+			b_miniport = NULL;	// will return NULL later
 		}
-		else b_miniport->port_number = freePortNum; //otherwise, set our miniport num to the available port num
+		else { // found an available port
+			b_miniport->port_number = k + BOUNDED_PORT_START; // set our miniport num to the available port num
+			g_boundedPortAvail[k] = false; //set the port to be used
+		}
 	}
 	else //otherwise, set our port number to g_boundPortCounter
 	{
@@ -152,12 +137,7 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 		g_boundPortCounter++; //increment counter
 	}
 
-	set_interrupt_level(old_level); //restore interrupt level
-
-	b_miniport->port_type = 'b'; //set miniport type to bounded
-	b_miniport->bound_port.remote_unbound_port = remote_unbound_port_number;
-	b_miniport->bound_port.remote_addr[0] = addr[0];
-	b_miniport->bound_port.remote_addr[1] = addr[1];
+	semaphore_V(g_semaLock); //end of critical section
 
 	return b_miniport;
 }
@@ -173,26 +153,27 @@ miniport_destroy(miniport_t* miniport)
 	//check if unbounded port, if so, we must free our queue and sema
 	if (miniport->port_type == 'u')
 	{
-		assert(miniport->unbound_port.datagrams_ready != NULL && miniport->unbound_port.incoming_data != NULL && miniport->port_number >= UNBOUNDED_PORT_START && miniport->port_number <= UNBOUNDED_PORT_END); //self check
+		assert(miniport->unbound_port.datagrams_ready != NULL && miniport->unbound_port.incoming_data != NULL
+			&& miniport->port_number >= UNBOUNDED_PORT_START && miniport->port_number <= UNBOUNDED_PORT_END); //self check
+
+		//update our global array of unbounded ports first
+		interrupt_level_t old_level = set_interrupt_level(DISABLED); // critical session
+		g_unboundedPortPtrs[miniport->port_number] = NULL;
+		set_interrupt_level(old_level);	// end of critical session
 
 		//free our queue
-		int queueFreeSuccess = queue_free_nodes_and_queue(miniport->unbound_port.incoming_data); AbortOnCondition(queueFreeSuccess == -1, "Queue_free failed in miniport_destroy()");
+		int queueFreeSuccess = queue_free_nodes_and_queue(miniport->unbound_port.incoming_data);
+		AbortOnCondition(queueFreeSuccess == -1, "Queue_free failed in miniport_destroy()");
 
 		//free semaphore
 		semaphore_destroy(miniport->unbound_port.datagrams_ready);
-		
-		//update our global array of unbounded ports
-		interrupt_level_t old_level = set_interrupt_level(DISABLED);
-		g_unboundedPortPtrs[miniport->port_number] = NULL;
-		set_interrupt_level(old_level);
 	}
 	else //if bounded port
 	{
 		assert(miniport->port_number >= BOUNDED_PORT_START && miniport->port_number <= BOUNDED_PORT_END);
-		int portNum = miniport->port_number;
-		interrupt_level_t old_level = set_interrupt_level(DISABLED);
-		g_boundedPortAvail[portNum - BOUNDED_PORT_START] = true; //set the avail of our bounded port to true
-		set_interrupt_level(old_level);
+		semaphore_P(g_semaLock); //begin critical section
+		g_boundedPortAvail[miniport->port_number - BOUNDED_PORT_START] = true; //set the avail of our bounded port to true
+		semaphore_V(g_semaLock); //end critical section
 	}
 
 	free(miniport);
@@ -236,29 +217,30 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 
 	//once a packet arrives and we've woken
 	network_interrupt_arg_t* dequeuedPacket = NULL;
-	assert(queue_length(local_unbound_port->unbound_port.incoming_data) != 0); //sanity check - our queue should have a packet waiting
-	int dequeueSuccess = queue_dequeue(local_unbound_port->unbound_port.incoming_data, (void**)&dequeuedPacket); AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minimsg_receive()");
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); // critical session (to dequeue the packet queue)
+	assert(queue_length(local_unbound_port->unbound_port.incoming_data) > 0); //sanity check - our queue should have a packet waiting
+	int dequeueSuccess = queue_dequeue(local_unbound_port->unbound_port.incoming_data, (void**)&dequeuedPacket); 
+	AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minimsg_receive()");
+	set_interrupt_level(old_level); //end of critical session to restore interrupt level
 
 	//validate our packet
 	if (dequeuedPacket->buffer != NULL || dequeuedPacket->size < 0 || dequeuedPacket->sender == NULL) return -1;
 
-	//unpack our packet
-	network_address_t sender_addr;
-	unpack_address((char*)sender_addr, dequeuedPacket->sender);
-	int packetSize = dequeuedPacket->size;
-
 	//get our header and message from the dequeued packet
-	mini_header_t receivedHeader;
-	memcpy(&receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_t));
-	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), packetSize - sizeof(mini_header_t));
-	
-	//if the length of the message received was longer than *len, return *len. Otherwise, set *len to the length of our received message
-	if (packetSize - sizeof(mini_header_t) <= *len) *len = packetSize - sizeof(mini_header_t);
+	assert(dequeuedPacket->size >= sizeof(mini_header_t));
+	mini_header_t* receivedHeaderPtr = (mini_header_t*)dequeuedPacket->buffer; // The first part of the buffer is header
+	//set *len to the msg length to be copied: if the length of the message received is >= *len, no change to *len. Otherwise, set *len to the length of our received message
+	if (dequeuedPacket->size - sizeof(mini_header_t) < *len) *len = dequeuedPacket->size - sizeof(mini_header_t);
+	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), *len); // msg is after header
 
 	//create our new local bound port pointed back to the sender
-	int sourcePort = (int) unpack_unsigned_short((char*)&receivedHeader.source_port);
-	assert(sourcePort >= BOUNDED_PORT_START && sourcePort <= BOUNDED_PORT_END); //make sure source port num is valid
-	*new_local_bound_port = miniport_create_bound(sender_addr, sourcePort);
+	int sourcePort = (int)unpack_unsigned_short(receivedHeaderPtr->source_port);	// get source's listening port
+	assert(sourcePort >= UNBOUNDED_PORT_START && sourcePort <= UNBOUNDED_PORT_END); //make sure source port num is valid
+	network_address_t remoteAddr;
+	unpack_address(receivedHeaderPtr->source_address, remoteAddr);	// get source's network address
+	free(dequeuedPacket);	// release the memory allocated to the packet
+
+	*new_local_bound_port = miniport_create_bound(remoteAddr, sourcePort);	// create a bound port
 	if (*new_local_bound_port == NULL) return -1;
 
     return *len; //return data payload bytes received not inclusive of header
@@ -269,10 +251,14 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 {
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
 
-	//strip header from packet and get destination port number
-	mini_header_t receivedHeader;
-	memcpy(&receivedHeader, arg->buffer, sizeof(mini_header_t));
-	int destPortNumber = (int)unpack_unsigned_short((char*)&receivedHeader);
+#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
+	printf("Entering minimsg_network_handler()\n");
+#endif
+
+	//Get header and destination port
+	mini_header_t* receivedHeaderPtr = (mini_header_t*)arg->buffer;	// force the buffer to be of header type so that we can get header info
+	int destPort = (int)unpack_unsigned_short(receivedHeaderPtr->destination_port);
+	assert(destPort >= UNBOUNDED_PORT_START && destPort <= UNBOUNDED_PORT_END); // sanity checking
 
 	
 	//validate this is a valid unbounded port, abort the program if it is not

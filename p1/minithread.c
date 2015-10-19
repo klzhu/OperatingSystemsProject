@@ -354,8 +354,8 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg)
 	are initialized.*/
 
 	//initialize global variables
-	g_runQueue = multilevel_queue_new(NUMBER_OF_LEVELS_OF_ML_THREAD); AbortOnCondition(g_runQueue == NULL, "Failed to initialize g_runQueue in minithread_system_initialize()");
-	g_zombieQueue = queue_new(); AbortOnCondition(g_zombieQueue == NULL, "Failed to initialize g_zombieQueue in minithread_system_initialize()");
+	g_runQueue = multilevel_queue_new(NUMBER_OF_LEVELS_OF_ML_THREAD);
+	g_zombieQueue = queue_new();
 
 	g_threadIdCounter = 0;
 	g_interruptCount = 0;
@@ -363,16 +363,21 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg)
 	g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level];
 
 	//the following threads will not be in any queue
-	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, READY, NULL); AbortOnCondition(g_reaperThread == NULL, "Failed to initialize g_reaperThread in minithread_system_initialize()");
-	g_idleThread = minithread_create_helper(idle_thread_method, NULL, READY, NULL); AbortOnCondition(g_idleThread == NULL, "Failed to initialize g_idleThread in minithread_system_initialize()");
-	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL); AbortOnCondition(g_runningThread == NULL, "Failed to initialize g_runningThread in minithread_system_initialize()");
+	g_reaperThread = minithread_create_helper(reaper_thread_method, NULL, READY, NULL);
+	g_idleThread = minithread_create_helper(idle_thread_method, NULL, READY, NULL);
+	g_runningThread = minithread_create_helper(mainproc, mainarg, READY, NULL);
 
-	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
+	// checking if any error occurs for above operations, and abort if error occurs
+	AbortOnCondition(g_runQueue == NULL || g_zombieQueue == NULL || g_reaperThread == NULL || g_idleThread == NULL || g_runningThread == NULL, "Failed in minithread_system_initialize()");
+
 	g_runningThread->status = RUNNING;
 
 	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service, enabled by the context switch
-	int netInitSuccess = network_initialize(minimsg_network_handler); AbortOnCondition(netInitSuccess == -1, "Network_initialize failed in minithread_system_initialize()"); //intialize network 
+	int netInitSuccess = network_initialize(minimsg_network_handler);
 	minimsg_initialize(); //initialize our minimsg layer
+
+	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
+	AbortOnCondition(netInitSuccess == -1 || kernelThreadStackPtr == NULL, "Failed in minithread_system_initialize()"); // check for errors and abort if error is found
 	minithread_switch(kernelThreadStackPtr, &(g_runningThread->stacktop)); //context switch to our minithread from kernel thread, this enables interrupts by default
 }
 
