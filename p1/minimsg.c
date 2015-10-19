@@ -260,23 +260,20 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	int destPort = (int)unpack_unsigned_short(receivedHeaderPtr->destination_port);
 	assert(destPort >= UNBOUNDED_PORT_START && destPort <= UNBOUNDED_PORT_END); // sanity checking
 
-	
-	//validate this is a valid unbounded port, abort the program if it is not
-	AbortOnCondition(destPortNumber < UNBOUNDED_PORT_START || destPortNumber > UNBOUNDED_PORT_END, "Received packet destination port not valid in minimsg_network_handler()");
-
 	//if the unbounded port has not been initialized, create it
-	if (g_unboundedPortPtrs[destPortNumber] == NULL)
+	if (g_unboundedPortPtrs[destPort] == NULL)
 	{
-		g_unboundedPortPtrs[destPortNumber] = miniport_create_unbound(destPortNumber);
-		AbortOnCondition(g_unboundedPortPtrs[destPortNumber] == NULL, "miniport_create_unbound failed in minimsg_network_handler()");
+		g_unboundedPortPtrs[destPort] = miniport_create_unbound(destPort);
+		AbortOnCondition(g_unboundedPortPtrs[destPort] == NULL, "miniport_create_unbound failed in minimsg_network_handler()");
 	}
 
 	//queue the packet and V the semaphore
-	assert(g_unboundedPortPtrs[destPortNumber]->port_type == 'u' && g_unboundedPortPtrs[destPortNumber]->unbound_port.datagrams_ready != NULL && g_unboundedPortPtrs[destPortNumber]->unbound_port.incoming_data != NULL); 
-	int appendSuccess = queue_append(g_unboundedPortPtrs[destPortNumber]->unbound_port.incoming_data, (void*)arg);
+	assert(g_unboundedPortPtrs[destPort]->port_type == 'u' && g_unboundedPortPtrs[destPort]->unbound_port.datagrams_ready != NULL
+		&& g_unboundedPortPtrs[destPort]->unbound_port.incoming_data != NULL); 
+	int appendSuccess = queue_append(g_unboundedPortPtrs[destPort]->unbound_port.incoming_data, (void*)arg);
 	AbortOnCondition(appendSuccess == -1, "Queue_append failed in minimsg_network_handler()");
 
-	semaphore_V(g_unboundedPortPtrs[destPortNumber]->unbound_port.datagrams_ready);
+	semaphore_V(g_unboundedPortPtrs[destPort]->unbound_port.datagrams_ready);
 
 	set_interrupt_level(old_level); //restore interrupt level
 }
