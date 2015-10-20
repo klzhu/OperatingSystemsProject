@@ -93,9 +93,6 @@ bool is_idle_or_reaper(minithread_t* mt)
 // arg is the thread to wake up
 void alarm_handler_function(void* arg)
 {
-#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
-	printf("Alarm goes off to wake up thread (ID = %d) at interrupt count = %lu\n", ((minithread_t*)arg)->threadId, g_interruptCount);
-#endif
 	minithread_start((minithread_t*)arg);
 }
 
@@ -123,7 +120,7 @@ int reaper_thread_method(arg_t arg)
 		while (queue_length(g_zombieQueue) > 0) {
 			minithread_t* threadToClean = NULL;
 
-			interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts as we remove thread from global zombi queue
+			interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts as we remove thread from global zombie queue
 			int dequeueSuccess = queue_dequeue(g_zombieQueue, (void**)&threadToClean);
 			AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue error in reaper_thread_method()");
 			set_interrupt_level(old_level); //restore interrupt level once we are done
@@ -251,9 +248,6 @@ minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
 		else g_runningThread = g_idleThread; //if no threads left to run, switch to idle thread
 	}
 	else { // get a thread from run queue
-#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
-		printf("# of items in g_runQueue is: %d & g_current_level = %d\n", multilevel_queue_length(g_runQueue), g_current_level);
-#endif
 		int level = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
 		AbortOnCondition(level == -1, "Queue_dequeue error in minithread_yield_helper()");
 		if (level > g_current_level) { // no thread in current level, move to the next level
@@ -321,9 +315,7 @@ void
 clock_handler(void* arg)
 {
 	set_interrupt_level(DISABLED); //disable interrupts while we're in interrupt handler
-#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
-	printf("Enter clock_handler(), yield current thread (ID = %d) at interrupt count = %lu\n", minithread_id(), g_interruptCount);
-#endif
+
 	g_interruptCount++; //increment interrupt count
 	int alarmRunSuccess = alarm_check_and_run(); // set off alarms if any
 	AbortOnCondition(alarmRunSuccess == -1, "Failed to run alarms in clock_handler()");

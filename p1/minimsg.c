@@ -228,16 +228,17 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 
 	//get our header and message from the dequeued packet
 	assert(dequeuedPacket->size >= sizeof(mini_header_t));
-	mini_header_t* receivedHeaderPtr = (mini_header_t*)dequeuedPacket->buffer; // The first part of the buffer is header
+	mini_header_t receivedHeader;
+	memcpy(&receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_t));
 	//set *len to the msg length to be copied: if the length of the message received is >= *len, no change to *len. Otherwise, set *len to the length of our received message
 	if (dequeuedPacket->size - sizeof(mini_header_t) < *len) *len = dequeuedPacket->size - sizeof(mini_header_t);
 	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), *len); // msg is after header
 
 	//create our new local bound port pointed back to the sender
-	int sourcePort = (int)unpack_unsigned_short(receivedHeaderPtr->source_port);	// get source's listening port
+	int sourcePort = (int)unpack_unsigned_short(receivedHeader.source_port);	// get source's listening port
 	assert(sourcePort >= UNBOUNDED_PORT_START && sourcePort <= UNBOUNDED_PORT_END); //make sure source port num is valid
 	network_address_t remoteAddr;
-	unpack_address(receivedHeaderPtr->source_address, remoteAddr);	// get source's network address
+	unpack_address(receivedHeader.source_address, remoteAddr);	// get source's network address
 	free(dequeuedPacket);	// release the memory allocated to the packet
 
 	*new_local_bound_port = miniport_create_bound(remoteAddr, sourcePort);	// create a bound port
@@ -251,13 +252,10 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 {
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
 
-#if !defined(NDEBUG)	// if assert is active (i.e., debugging), print out the following debug info
-	printf("Entering minimsg_network_handler()\n");
-#endif
-
 	//Get header and destination port
-	mini_header_t* receivedHeaderPtr = (mini_header_t*)arg->buffer;	// force the buffer to be of header type so that we can get header info
-	int destPort = (int)unpack_unsigned_short(receivedHeaderPtr->destination_port);
+	mini_header_t receivedHeader;
+	memcpy(&receivedHeader, arg->buffer, sizeof(mini_header_t));
+	int destPort = (int)unpack_unsigned_short(receivedHeader.destination_port);
 	assert(destPort >= UNBOUNDED_PORT_START && destPort <= UNBOUNDED_PORT_END); // sanity checking
 
 	//if the unbounded port has not been initialized, create it
