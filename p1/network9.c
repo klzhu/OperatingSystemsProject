@@ -42,12 +42,12 @@ thread(int* arg) {
 
 	if (minimsg_send(listen_port, send_port, text, textlen) == -1)
 	{
-		printf("Send_result == -1; Passed test!");
+		printf("Send_result == -1; Passed test!\n");
 	}
 	else
 	{
 		minimsg_receive(listen_port, &from, buffer, &length);
-		printf("Send_result != -1; Failed test!");
+		printf("Send_result != -1; Failed test!\n");
 	}
 	return 0;
 }
