@@ -34,8 +34,8 @@ int
 thread(int* arg) {
 	char buffer[BUFFER_SIZE];
 	int length = BUFFER_SIZE;
-	int listen_create_result;
-	int send_create_result;
+	//int listen_create_result;
+	//int send_create_result;
 	miniport_t *from;
 	network_address_t my_address;
 
