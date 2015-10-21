@@ -1,7 +1,10 @@
 /* Network test program 8
 
 	Tests the behavior of minimsg_recieve when data is longer than the buffer
-	Output should still be "Hello, world!\n"
+	Output should be "Hello, world!\nGoodbye",
+	while the original message is "Hello, world!\nGoodbye, world!\n"
+
+	Changing buffer to 
 
 	USAGE: ./network8 <port>
 
@@ -17,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BUFFER_SIZE 14
+#define BUFFER_SIZE 21
 
 
 miniport_t *listen_port;
@@ -39,7 +42,7 @@ thread(int* arg) {
 
 	minimsg_send(listen_port, send_port, text, textlen);
 	minimsg_receive(listen_port, &from, buffer, &length);
-	printf("%s", buffer);
+	printf("%s\n", buffer);
 
 	return 0;
 }
