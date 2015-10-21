@@ -65,10 +65,10 @@ miniport_create_unbound(int port_number)
 	if (g_unboundedPortPtrs[port_number] == NULL) { //if the unbounded port has not been created, if it has been created, skip this and return reference
 	//if not, we must create the unbounded port
 		miniport_t* u_miniport = malloc(sizeof(miniport_t));
-		if (u_miniport == NULL)
+		if (u_miniport == NULL) //malloc errored
 		{
 			set_interrupt_level(old_level);
-			return NULL; //malloc errored
+			return NULL;
 		}
 		u_miniport->port_number = port_number;
 		u_miniport->port_type = 'u';
@@ -85,7 +85,7 @@ miniport_create_unbound(int port_number)
 		u_miniport->unbound_port.incoming_data = queue_new();
 		if (u_miniport->unbound_port.incoming_data == NULL) //error creating our queue
 		{
-			free(u_miniport->unbound_port.datagrams_ready); //free newly allocated space for sema
+			semaphore_destroy(u_miniport->unbound_port.datagrams_ready); //free newly allocated space for sema
 			free(u_miniport); //free newly allocated space for miniport
 			set_interrupt_level(old_level);
 			return NULL;
@@ -112,7 +112,7 @@ miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
 
 	b_miniport->port_type = 'b'; //set miniport type to bounded
 	b_miniport->bound_port.remote_unbound_port = remote_unbound_port_number;
-	memcpy(&b_miniport->bound_port.remote_addr, &addr, sizeof(addr));
+	memcpy(b_miniport->bound_port.remote_addr, addr, sizeof(network_address_t));
 
 	semaphore_P(g_semaLock); //critical section to access global variables g_boundPortCounter & g_boundedPortAvail
 	if (g_boundPortCounter > BOUNDED_PORT_END) //if we've reached the end of our port space, we need to search for an available port number
@@ -224,7 +224,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	set_interrupt_level(old_level); //end of critical session to restore interrupt level
 
 	//validate our packet
-	if (dequeuedPacket->buffer != NULL || dequeuedPacket->size < 0 || dequeuedPacket->sender == NULL) return -1;
+	if (dequeuedPacket->buffer == NULL || dequeuedPacket->size < 0 || dequeuedPacket->sender == NULL) return -1;
 
 	//get our header and message from the dequeued packet
 	assert(dequeuedPacket->size >= sizeof(mini_header_t));
