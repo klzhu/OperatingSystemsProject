@@ -41,24 +41,24 @@ thread(int* arg) {
 
 	network_get_my_address(my_address);
 	listen_port = miniport_create_unbound(32768);
-	send_port = miniport_create_bound(my_address, 32767);
+	send_port = miniport_create_bound(my_address, 32768);
 
 	if (send_port == NULL)
 	{
-		printf("Listener port number 32768 was not created\nPasses!\n");
+		printf("Sender port number 32768 (general port 65536) was not created\nPasses!\n");
 	}
 	else
 	{
-		printf("Listener port number 32768 was created\nFails!\n");
+		printf("Sender port number 32768 (general port 65536) was created\nFails!\n");
 		minimsg_send(listen_port, send_port, text, textlen);
 	}
 	if (listen_port == NULL)
 	{
-		printf("Listener port number 32767 was not created\nPasses!\n");
+		printf("Listener port number 32768 (general port 32768) was not created\nPasses!\n");
 	}
 	else
 	{
-		printf("Listener port number 32767 was created\nFails!\n");
+		printf("Listener port number 32768 (general port 32768) was created\nFails!\n");
 		minimsg_receive(listen_port, &from, buffer, &length);
 	}
 	return 0;
