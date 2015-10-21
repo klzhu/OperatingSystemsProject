@@ -258,11 +258,10 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	int destPort = (int)unpack_unsigned_short(receivedHeader.destination_port);
 	assert(destPort >= UNBOUNDED_PORT_START && destPort <= UNBOUNDED_PORT_END); // sanity checking
 
-	//if the unbounded port has not been initialized, create it
+	//if the unbounded port has not been initialized, throw away the packet
 	if (g_unboundedPortPtrs[destPort] == NULL)
 	{
-		g_unboundedPortPtrs[destPort] = miniport_create_unbound(destPort);
-		AbortOnCondition(g_unboundedPortPtrs[destPort] == NULL, "miniport_create_unbound failed in minimsg_network_handler()");
+		return;
 	}
 
 	//queue the packet and V the semaphore

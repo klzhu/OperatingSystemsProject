@@ -302,8 +302,6 @@ minithread_yield()
 		}
 	}
 	else {// if curr thread is not the idle or reaper thread, reduce its quanta by 1 and adjust it level if needed
-		assert(currThread->level == g_current_level);
-
 		currThread->quanta--;	// It has used up 1 quanta
 		if (currThread->quanta == 0 && currThread->level < NUMBER_OF_LEVELS_OF_ML_THREAD - 1) { // no level increase if already in highest level
 			currThread->level++;
