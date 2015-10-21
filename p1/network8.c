@@ -1,10 +1,12 @@
 /* Network test program 8
 
 	Tests the behavior of minimsg_recieve when data is longer than the buffer
-	Output should still be "Hello, world!\n"
+	
+	Original message is "Hello, world!\nGoodbye, world!\n"
+	Buffer size is 21, length of message is 30
+	Expected value is "Hello, world!\nGoodbye"
 
 	USAGE: ./network8 <port>
-
 	where <port> is the minimsg port to use
 */
 
@@ -17,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BUFFER_SIZE 14
+#define BUFFER_SIZE 21
 
 
 miniport_t *listen_port;
@@ -39,7 +41,7 @@ thread(int* arg) {
 
 	minimsg_send(listen_port, send_port, text, textlen);
 	minimsg_receive(listen_port, &from, buffer, &length);
-	printf("%s", buffer);
+	printf("%s\n", buffer); //newline is to enable printing when truncated before a newline character has been reached
 
 	return 0;
 }

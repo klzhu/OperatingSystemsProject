@@ -53,5 +53,3 @@ main(int argc, char** argv) {
     minithread_system_initialize(thread, NULL);
     return -1;
 }
-
-

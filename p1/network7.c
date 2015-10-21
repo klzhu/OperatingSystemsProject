@@ -1,11 +1,10 @@
 /* Network test program 7
 	
-	Tests the bounds of memory by creating one thread, which
+	Tests the bounds of memory by creating one thread which
 	creates 40,000 ports, sends a message over them, and then
 	destroys the created ports.
 
 	USAGE: ./network7 <port>
-
 	where <port> is the minimsg port to use
 */
 

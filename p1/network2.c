@@ -72,5 +72,3 @@ main(int argc, char** argv) {
     minithread_system_initialize(transmit, NULL);
     return -1;
 }
-
-
