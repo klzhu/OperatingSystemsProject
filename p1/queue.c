@@ -2,7 +2,7 @@
 * Generic queue implementation.
 *
 */
-// #define NDEBUG //REENABLE BEFORE SUBMITTING
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>

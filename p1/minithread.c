@@ -59,7 +59,6 @@ uint64_t g_interruptCount = 0; //global counter to count how many interrupts has
 
 							   //Thread statuses
 typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // thread's states.
-typedef enum { NONE, RUN_QUEUE, ZOMBIE_QUEUE } thread_queue_name; // name of thread queues
 
 struct minithread
 {
@@ -78,9 +77,10 @@ struct minithread
 // Note that only valid input for whichQueue is NULL or g_runQueue.
 minithread_t* minithread_create_helper(proc_t proc, arg_t arg, thread_state status, multilevel_queue_t* whichQueue);
 
-// This function does same as minithread_yield() and minithread_stop.
-// It takes in the thread state and which queue the thread should be added to as input
-void minithread_yield_helper(thread_state status, thread_queue_name whichQueue);
+// forward declaration (see the definition below for its functions) 
+// This function does same as minithread_stop() except that caller can specify 
+// thread's status to set, which queue to insert current thread, and which thread to yield to.
+void minithread_stop_helper(thread_state status, queue_t* whichQueue, minithread_t* threadToRunNext);
 
 //This function returns true if the thread is either the idle or reaper thread, which should not be in a queue
 bool is_idle_or_reaper(minithread_t* mt)
@@ -88,7 +88,7 @@ bool is_idle_or_reaper(minithread_t* mt)
 	return (mt == g_idleThread || mt == g_reaperThread);
 }
 
-/*****		alarm handler	*****/
+/*****	 alarm handler	 *****/
 // This function wakes up a thread and put it to runQueue. 
 // arg is the thread to wake up
 void alarm_handler_function(void* arg)
@@ -104,7 +104,9 @@ int cleanup_proc(arg_t arg)
 	assert(is_idle_or_reaper(minithread_self()) == false); //idle and reaper thread should never end
 
 	while (1) {  //final_proc should not return
-		minithread_yield_helper(DONE, ZOMBIE_QUEUE); //scheduler will set calling thread to done and put it on zombie queue and yield
+		set_interrupt_level(DISABLED); //disable interrupts for yielding, interrupt is enabled by context switch
+		// set the thread to DONE and put to zombie Queue, and yield to thread g_reaperThread to clean up DONE thread(s)
+		minithread_stop_helper(DONE, g_zombieQueue, g_reaperThread);
 	}
 
 	return -1; //should never reach here (never return)
@@ -117,19 +119,16 @@ int reaper_thread_method(arg_t arg)
 
 	while (1) //runs forever so it never runs it's final proc
 	{
+		interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts as we access global zombie queue
 		while (queue_length(g_zombieQueue) > 0) {
 			minithread_t* threadToClean = NULL;
-
-			interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts as we remove thread from global zombie queue
 			int dequeueSuccess = queue_dequeue(g_zombieQueue, (void**)&threadToClean);
-			AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue error in reaper_thread_method()");
-			set_interrupt_level(old_level); //restore interrupt level once we are done
-
 			assert(dequeueSuccess == 0 && threadToClean != NULL && threadToClean->stackbase != NULL);
 			minithread_free_stack(threadToClean->stackbase);
 			free(threadToClean);
 		}
 
+		set_interrupt_level(old_level); //restore interrupt level once we are done
 		minithread_yield(); //yield process to another thread
 	}
 
@@ -143,7 +142,6 @@ int idle_thread_method(arg_t arg)
 
 	while (1) //run forever
 	{
-		assert(multilevel_queue_length(g_runQueue) >= 0); // self check
 		if (multilevel_queue_length(g_runQueue) > 0) { //if there is a thread in runQueue, yield to it
 			minithread_yield(); // yield to another thread
 		}
@@ -162,7 +160,7 @@ minithread_create_helper(proc_t proc, arg_t arg, thread_state status, multilevel
 	minithread_t* mt = malloc(sizeof(minithread_t));
 	if (mt == NULL) return NULL; //if malloc errored
 
-								 //allocate stack for thread
+	//allocate stack for thread
 	minithread_allocate_stack(&(mt->stackbase), &(mt->stacktop));
 	minithread_initialize_stack(&(mt->stacktop), proc, arg, cleanup_proc, NULL);
 
@@ -175,7 +173,11 @@ minithread_create_helper(proc_t proc, arg_t arg, thread_state status, multilevel
 	if (whichQueue != NULL) //if thread needs to be added to queue, add it
 	{
 		int appendSuccess = multilevel_queue_enqueue(whichQueue, mt->level, mt);
-		AbortOnCondition(appendSuccess != 0, "Queue_append failed in minithread_create_helper()");
+		if (appendSuccess != 0) //error while enqueing our new thread
+		{
+			free(mt); //free newly created minithread
+			mt = NULL;
+		}
 	}
 	set_interrupt_level(old_level); //restore interrupt level as we leave crit section
 	return mt;
@@ -225,66 +227,33 @@ minithread_start(minithread_t *t)
 	set_interrupt_level(old_level); //restore interrupt level
 }
 
-// We assume that each yield() and put back to runQueue would be counted as having consumed 1 quanta in multi-level queue management
+// This function implements minithread_stop() with more flexibily.
+// Inputs: 
+//		status - The status that the current thread's status will be set to.
+//		whichQueue -- which queue to put the current thread to
+//		threadToRun -- the thread the current thread will yield to, which cannot be the calling function's thread.
+// 
+// NOTES:
+//	1.	We assume that minithread_stop() does not consume any quanta.
+//  2.  There is no protection for atomic operation inside this function. Caller should ensure
+//		this function is executed in as an atomic operation by disabling interrupts
+//  3.  It does not touch g_current_level or level's quanta. It is calling function's responsibility
 void
-minithread_yield_helper(thread_state status, thread_queue_name whichQueue)
+minithread_stop_helper(thread_state status, queue_t* whichQueue, minithread_t* threadToRunNext)
 {
-	assert(g_runningThread != NULL && g_runQueue != NULL && g_zombieQueue != NULL);
-
-	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts as we start manipulating global vars and yielding
+	assert(threadToRunNext != NULL);
 
 	minithread_t* yieldingThread = minithread_self(); //get calling thread
-	assert(yieldingThread != NULL && yieldingThread->status == RUNNING);
+	assert(yieldingThread != NULL && yieldingThread->status == RUNNING && yieldingThread != threadToRunNext);
 
-	assert(multilevel_queue_length(g_runQueue) >= 0); // self check
-
-													  //point g_runningThread thread we'll context switch to
-	if (queue_length(g_zombieQueue) > 0) g_runningThread = g_reaperThread; //if there are threads needing clean up, call reaper
-	else if (multilevel_queue_length(g_runQueue) == 0) {
-		if (g_runningThread == g_idleThread) { //if the running thread is already the idle thread, return
-			set_interrupt_level(old_level); //restore old interrupt level
-			return;
-		}
-		else g_runningThread = g_idleThread; //if no threads left to run, switch to idle thread
-	}
-	else { // get a thread from run queue
-		int level = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&g_runningThread); //cast g_runningThread to a void pointer
-		AbortOnCondition(level == -1, "Queue_dequeue error in minithread_yield_helper()");
-		if (level > g_current_level) { // no thread in current level, move to the next level
-			g_current_level++;
-			if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0;
-			g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level];
-		}
-		else {
-			g_quantaCountdown--;
-			if (g_quantaCountdown == 0) {
-				g_current_level++;
-				if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0;
-				g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level];
-			}
-		}
-		assert(g_runningThread != NULL && g_runningThread->status == READY);
-	}
-
-	//set the yielding thread status, insert it into a queue if necessary
-	yieldingThread->status = status;
-	if (whichQueue == ZOMBIE_QUEUE) // put the yielding thread to zombie queue
+	yieldingThread->status = status; // set the yielding thread status
+	if (whichQueue != NULL) // put the yielding thread to the queue
 	{
-		int appendSuccess = queue_append(g_zombieQueue, yieldingThread);
-		AbortOnCondition(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
-	}
-	else if (whichQueue == RUN_QUEUE) { // put the yielding thread to run queue
-		yieldingThread->quanta--;	// It has used up 1 quanta
-		if (yieldingThread->quanta == 0 && yieldingThread->level < NUMBER_OF_LEVELS_OF_ML_THREAD - 1) { // no level increase if already in highest level
-			yieldingThread->level++;
-			yieldingThread->quanta = INITIAL_THREAD_QUANTA[yieldingThread->level];	// initialize quanta to the level's intial quanta
-		}
-		int appendSuccess = multilevel_queue_enqueue(g_runQueue, yieldingThread->level, yieldingThread);
-		AbortOnCondition(appendSuccess != 0, "Queue append error in minithread_yield_helper()");
+		int appendSuccess = queue_append(whichQueue, yieldingThread);
+		AbortOnCondition(appendSuccess != 0, "Queue append error in minithread_stop_helper()");
 	}
 
-	//context switch to new running thread
-	assert(g_runningThread != NULL);
+	g_runningThread = threadToRunNext;
 	g_runningThread->status = RUNNING;
 	minithread_switch(&(yieldingThread->stacktop), &(g_runningThread->stacktop)); //this will reenable interrupts automatically
 }
@@ -293,7 +262,21 @@ void
 minithread_stop()
 {
 	assert(is_idle_or_reaper(minithread_self()) == false); //idle and reaper threads should never have the WAIT status
-	minithread_yield_helper(WAIT, NONE); //yield processor, set status to WAIT, and don't add thread to any queue
+
+	set_interrupt_level(DISABLED); //disable interrupts for yielding, interrupt is enabled by context switch
+	minithread_t* nextThread = g_idleThread;
+	if (multilevel_queue_length(g_runQueue) > 0) { // If runQueue is not empty, get the next thread to see which one should run next, otherwise, nextThread is idle thread
+		int nextLevel = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get and dequeue the next thread from runQueue
+		AbortOnCondition(nextLevel == -1, "multilevel_queue_dequeue error in minithread_stop()");
+
+		// update g_current_level to the level of the next-to-run thread if needed
+		if (nextLevel != g_current_level) { // move g_current_level to nextLevel if there is no thread to run at the current level
+			g_current_level = nextLevel; // move to nextLevel that has the next thread to run
+			g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level]; // init the level's quanta
+		}
+	}
+
+	minithread_stop_helper(WAIT, NULL, nextThread); //yield processor, set status to WAIT, and don't add thread to any queue. Context switch will automatically reenable interrupts
 }
 
 /*Forces the caller to relinquish the processor and be put to the end of
@@ -301,9 +284,60 @@ the ready queue.  Allows another thread to run. */
 void
 minithread_yield()
 {
-	//if idle or reaper thread, don't add to any queue, otherwise, add to run queue
-	thread_queue_name whichQueue = is_idle_or_reaper(minithread_self()) ? NONE : RUN_QUEUE;
-	minithread_yield_helper(READY, whichQueue);
+	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupts to ensure atomic operation
+
+	minithread_t* currThread = minithread_self(); //get calling thread
+	assert(currThread != NULL && currThread->status == RUNNING);
+
+	minithread_t* nextThread = NULL; // NULL indicates keep running the current thread without context switch
+	if (is_idle_or_reaper(currThread)) { // currThread is either the idle or reaper thread, we assume it does not count into the level's quanta
+		if (multilevel_queue_length(g_runQueue) == 0) { // no thread in runQueue
+			if (currThread == g_reaperThread) { // if the curr thread is the reaper thread, switch to g_idleThread
+				nextThread = g_idleThread;
+			}
+		}
+		else { // get next thread from runQueue
+			int dequeueSuccess = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get next thread to run
+			AbortOnCondition(dequeueSuccess == -1, "multilevel_queue_dequeue error in minithread_yield()");
+		}
+	}
+	else {// if curr thread is not the idle or reaper thread, reduce its quanta by 1 and adjust it level if needed
+		assert(currThread->level == g_current_level);
+
+		currThread->quanta--;	// It has used up 1 quanta
+		if (currThread->quanta == 0 && currThread->level < NUMBER_OF_LEVELS_OF_ML_THREAD - 1) { // no level increase if already in highest level
+			currThread->level++;
+			currThread->quanta = INITIAL_THREAD_QUANTA[currThread->level];	// initialize quanta to the level's intial quanta
+		}
+
+		// Update the quanta count for the current level, and adjust the running level if needed
+		g_quantaCountdown--;
+		if (g_quantaCountdown == 0) {
+			g_current_level++;
+			if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0; //wrap back around to the first level if needed
+			g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level];
+		}
+
+		if (multilevel_queue_length(g_runQueue) > 0) { // If runQueue is not empty, get the next thread to see which one should run next
+			int dequeueSuccess = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get the next thread from runQueue without dequeuing it
+			AbortOnCondition(dequeueSuccess == -1, "multilevel_queue_dequeue error in minithread_yield()");
+		}
+	}
+
+	if (nextThread == NULL) { // no need to switch, keep running the current thread
+		set_interrupt_level(old_level); //restore old interrupt level
+		return;
+	}
+	else { // context switch to nextThread
+		currThread->status = READY;
+		int appendSuccess = multilevel_queue_enqueue(g_runQueue, currThread->level, currThread); // insert CurrThread to runQueue
+		AbortOnCondition(appendSuccess == -1, "Failed to enqueue in minithread_yield()");
+
+		assert(nextThread->status == READY);
+		nextThread->status = RUNNING;
+		g_runningThread = nextThread;
+		minithread_switch(&(currThread->stacktop), &(g_runningThread->stacktop)); //this will reenable interrupts automatically
+	}
 }
 
 /*
