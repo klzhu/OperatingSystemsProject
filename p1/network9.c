@@ -32,7 +32,7 @@ int
 thread(int* arg) {
 	char buffer[BUFFER_SIZE];
 	int length = BUFFER_SIZE;
-	int send_result;
+	//int send_result;
 	miniport_t *from;
 	network_address_t my_address;
 
@@ -40,14 +40,13 @@ thread(int* arg) {
 	listen_port = miniport_create_unbound(0);
 	send_port = miniport_create_bound(my_address, 0);
 
-	send_result = minimsg_send(listen_port, send_port, text, textlen);
-	minimsg_receive(listen_port, &from, buffer, &length);
-	if (send_result == -1)
+	if (minimsg_send(listen_port, send_port, text, textlen) == -1)
 	{
 		printf("Send_result == -1; Passed test!");
 	}
 	else
 	{
+		minimsg_receive(listen_port, &from, buffer, &length);
 		printf("Send_result != -1; Failed test!");
 	}
 	return 0;
