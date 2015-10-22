@@ -56,7 +56,7 @@ int g_quantaCountdown = -1; //global counter to keep track of how many quanta pa
 
 uint64_t g_interruptCount = 0; //global counter to count how many interrupts has passed. This value should not overflow for years.
 
-							   //Thread statuses
+//Thread statuses
 typedef enum { RUNNING, READY, WAIT, DONE } thread_state; // thread's states.
 
 struct minithread
@@ -266,7 +266,7 @@ minithread_stop()
 	minithread_t* nextThread = g_idleThread;
 	if (multilevel_queue_length(g_runQueue) > 0) { // If runQueue is not empty, get the next thread to see which one should run next, otherwise, nextThread is idle thread
 		int nextLevel = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get and dequeue the next thread from runQueue
-		AbortOnCondition(nextLevel == -1, "multilevel_queue_dequeue error in minithread_stop()");
+		assert(nextLevel != -1); //should not have returned an error code
 
 		// update g_current_level to the level of the next-to-run thread if needed
 		if (nextLevel != g_current_level) { // move g_current_level to nextLevel if there is no thread to run at the current level
@@ -296,11 +296,12 @@ minithread_yield()
 			}
 		}
 		else { // get next thread from runQueue
-			int dequeueSuccess = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get next thread to run
-			AbortOnCondition(dequeueSuccess == -1, "multilevel_queue_dequeue error in minithread_yield()");
+			int nextLevel = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get next thread to run
+			assert(nextLevel >= 0 && nextThread != NULL);
 		}
 	}
-	else {// if curr thread is not the idle or reaper thread, reduce its quanta by 1 and adjust it level if needed
+	else {
+		// if curr thread is not the idle or reaper thread, reduce its quanta by 1 and adjust its level if needed
 		currThread->quanta--;	// It has used up 1 quanta
 		if (currThread->quanta == 0 && currThread->level < NUMBER_OF_LEVELS_OF_ML_THREAD - 1) { // no level increase if already in highest level
 			currThread->level++;
@@ -311,13 +312,28 @@ minithread_yield()
 		g_quantaCountdown--;
 		if (g_quantaCountdown == 0) {
 			g_current_level++;
-			if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0; //wrap back around to the first level if needed
+			if (g_current_level == NUMBER_OF_LEVELS_OF_ML_THREAD) g_current_level = 0;
 			g_quantaCountdown = INITIAL_QUEUE_QUANTA[g_current_level];
 		}
 
 		if (multilevel_queue_length(g_runQueue) > 0) { // If runQueue is not empty, get the next thread to see which one should run next
-			int dequeueSuccess = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // get the next thread from runQueue without dequeuing it
-			AbortOnCondition(dequeueSuccess == -1, "multilevel_queue_dequeue error in minithread_yield()");
+			int nextLevel = multilevel_queue_peek(g_runQueue, g_current_level, (void**)&nextThread); // get the next thread from runQueue without dequeuing it
+			assert(nextLevel >= 0 && nextThread != NULL && nextThread->level == nextLevel);
+
+			// find whose level is closer to g_current_level, the closer should run next
+			int lv = g_current_level;
+			while (lv != currThread->level && lv != nextLevel) { // wrappingly increase level from g_current_level to see which one is hit first
+				lv++;
+				if (lv == NUMBER_OF_LEVELS_OF_ML_THREAD) lv = 0; // wrap around
+			}
+
+			if (lv == nextLevel) { // switch to next thread
+				nextLevel = multilevel_queue_dequeue(g_runQueue, g_current_level, (void**)&nextThread); // dequeue the next thread from ruQueue
+				assert(nextLevel >= 0 && nextThread != NULL && nextThread->level == nextLevel);
+			}
+			else { // currThread should continue to run, no need to context switch
+				nextThread = NULL;
+			}
 		}
 	}
 

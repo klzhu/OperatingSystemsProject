@@ -44,4 +44,13 @@ int multilevel_queue_free(multilevel_queue_t* queue);
 */
 int multilevel_queue_length(const multilevel_queue_t* mlq);
 
+/*
+* This function is the same as multilevel_queue_dequeue() except the returned item is not dequeued, i.e.,
+* return the first void* from the multilevel queue starting at the specified level without dequeuing it.
+* Levels wrap around so as long as there is something in the multilevel queue an item should be returned.
+* Return the level that the item was located on and that item.
+* If the multilevel queue is empty, return -1 (failure) with a NULL item.
+*/
+int multilevel_queue_peek(multilevel_queue_t* queue, int level, void** item);
+
 #endif /*__MULTILEVEL_QUEUE_H__*/

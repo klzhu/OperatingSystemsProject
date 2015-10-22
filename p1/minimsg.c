@@ -223,8 +223,8 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minimsg_receive()");
 	set_interrupt_level(old_level); //end of critical session to restore interrupt level
 
-	//Our packet should be valid
-	assert(dequeuedPacket->buffer != NULL || dequeuedPacket->size >= 0 || dequeuedPacket->sender != NULL);
+	//Our packet size should be valid
+	assert(dequeuedPacket->size >= 0);
 
 	//get our header and message from the dequeued packet
 	assert(dequeuedPacket->size >= sizeof(mini_header_t));

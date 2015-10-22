@@ -94,6 +94,29 @@ int multilevel_queue_dequeue(multilevel_queue_t* queue, int level, void** item)
 	return -1; //if we left the while loop and has not returned, there was nothing to dequeue
 }
 
+/*
+* This function is the same as multilevel_queue_dequeue() except the returned item is not dequeued, i.e.,
+* return the first void* from the multilevel queue starting at the specified level without dequeuing it.
+* Levels wrap around so as long as there is something in the multilevel queue an item should be returned.
+* Return the level that the item was located on and that item.
+* If the multilevel queue is empty, return -1 (failure) with a NULL item.
+*/
+int multilevel_queue_peek(multilevel_queue_t* queue, int level, void** data)
+{
+	//validate inputs
+	if (queue == NULL || data == NULL || level < 0 || level >= queue->num_levels) return -1;
+
+	// Search the item by wrapping around levels starting from the input level
+	int currLevel = level;
+	do {
+		if (queue_peek(queue->queues[currLevel], data) == 0) return currLevel; // if successfully dequeued, return its level
+		currLevel++;
+		if (currLevel == queue->num_levels) currLevel = 0; // wrap around
+	} while (currLevel != level);
+
+	return -1; // if not returned yet, cannot dequeue at any level 
+}
+
 /* 
  * Free the queue and return 0 (success) or -1 (failure).
  * Do not free the queue nodes; this is the responsibility of the programmer.
