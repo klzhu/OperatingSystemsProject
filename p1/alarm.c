@@ -46,7 +46,7 @@ register_alarm(int delay, alarm_handler_t alarm, void *arg) {
 	//if this is first alarm being added, initialize alarms queue
 	if (g_alarmsQueue == NULL) {
 		g_alarmsQueue = queue_new();
-		AbortGracefully(g_alarmsQueue == NULL, "Failed to initialize alarms queue in register_alarm()");
+		AbortOnCondition(g_alarmsQueue == NULL, "Failed to initialize alarms queue in register_alarm()");
 	}
 
 	//insert alarm into global alarms queue
@@ -69,7 +69,7 @@ register_alarm(int delay, alarm_handler_t alarm, void *arg) {
 /* see alarm.h */
 int
 deregister_alarm(alarm_id alarm) {
-	AbortGracefully(alarm == NULL || g_alarmsQueue == NULL, "Invalid input alarm or alarmsQueue in deregister_alarm()");
+	AbortOnCondition(alarm == NULL || g_alarmsQueue == NULL, "Invalid input alarm or alarmsQueue in deregister_alarm()");
 
 	//disable interrupts as we access our global queue
 	interrupt_level_t old_level = set_interrupt_level(DISABLED);
