@@ -23,7 +23,6 @@
 #include "queue.h"
 #include "multilevel_queue.h"
 #include "network.h"
-#include "common.h"
 #include "minimsg.h"
 
 /*

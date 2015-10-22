@@ -23,7 +23,7 @@ int g_boundPortCounter = -1; //for incrementally assigning bounded ports
 bool g_boundedPortAvail[BOUNDED_PORT_END - BOUNDED_PORT_START + 1]; //track availability of bounded ports once g_boundPortCounter goes above max value
 semaphore_t* g_semaLock = NULL; // used as mutex to protect access to g_boundPortCounter & g_boundedPortAvail
 
-//g_unboundedPortPtrs is protected by disabling interrupt since it is touched in network interrupt handler
+//g_unboundedPortPtrs is protected by disabling interrupt since methods accessing this is always quick
 miniport_t* g_unboundedPortPtrs[UNBOUNDED_PORT_END - UNBOUNDED_PORT_START + 1]; //tracks the pointers to all of our unbounded ports
 
 struct miniport
@@ -210,7 +210,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	assert(g_boundPortCounter >= 0); //sanity check to ensure minimsg_initialize() has been called first
 
 	//validate input
-	if (new_local_bound_port == NULL || local_unbound_port == NULL|| msg == NULL || len == NULL) return -1;
+	if (new_local_bound_port == NULL || local_unbound_port == NULL|| msg == NULL || len == NULL || *len < 0) return -1;
 	assert(local_unbound_port->port_type == 'u' && local_unbound_port->unbound_port.datagrams_ready != NULL && local_unbound_port->unbound_port.datagrams_ready != NULL);
 
 	semaphore_P(local_unbound_port->unbound_port.datagrams_ready); //P the semaphore, if the count is 0 we're blocked until packet arrives
@@ -261,6 +261,7 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	//if the unbounded port has not been initialized, throw away the packet
 	if (g_unboundedPortPtrs[destPort] == NULL)
 	{
+		set_interrupt_level(old_level); //restore interrupt level
 		return;
 	}
 

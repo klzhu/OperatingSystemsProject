@@ -1,4 +1,4 @@
-/* My network test program 
+/* My network test program, which is based off of network5 and network6
 
 	send messages back and forth between two processes on different computers
 
@@ -9,7 +9,11 @@
 
 	if no hostname is supplied, will wait for a packet before sending the first
 	packet; if a hostname is given, will send and then receive.
-	the receive-first copy must be started first!
+	the receive-first copy must be started before the send-first copy.
+
+	This also has additional tests such as multiple threads listening on one miniport, testing the wrap around 
+	in creating the bounded ports, etc...
+
 */
 
 #include <stdbool.h>
