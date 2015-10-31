@@ -32,14 +32,12 @@ unsigned short unpack_unsigned_short(const char* buf)
 
 void pack_address(char* buf, const network_address_t address)
 {
-    const uint8_t* addr_ptr = (const uint8_t*) address;
-    pack_unsigned_int(buf, addr_ptr[0]);
-    pack_unsigned_int(buf+sizeof(unsigned int), addr_ptr[1]);
+    pack_unsigned_int(buf, address[0]);
+    pack_unsigned_int(buf+sizeof(unsigned int), address[1]);
 }
 
 void unpack_address(const char* buf, network_address_t address)
 {
-    uint8_t* addr_ptr = (uint8_t*) address;
-    addr_ptr[0] = unpack_unsigned_int(buf);
-    addr_ptr[1] = unpack_unsigned_int(buf+sizeof(unsigned int));
+    address[0] = unpack_unsigned_int(buf);
+    address[1] = unpack_unsigned_int(buf+sizeof(unsigned int));
 }

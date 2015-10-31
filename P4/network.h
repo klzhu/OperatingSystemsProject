@@ -6,7 +6,7 @@
  *      Low-level network interface.
  *
  *      This interface defines a low-level network interface for sending and
- *      receiving packets between pseudo-network interfaces located on the 
+ *      receiving packets between pseudo-network interfaces located on the
  *      same or different hosts.
  */
 
@@ -61,9 +61,9 @@ void network_udp_ports(short myportnum, short otherportnum);
  * successfully send the data.  Returns -1 otherwise.
  */
 int
-network_send_pkt(network_address_t dest_address,
-                 int hdr_len, char * hdr,
-                 int  data_len, char * data);
+network_send_pkt(const network_address_t dest_address,
+		 int hdr_len, const char * hdr,
+		 int  data_len, const char * data);
 
 
 /*******************************************************************************
@@ -81,28 +81,28 @@ void network_get_my_address(network_address_t my_address);
 /* look up the given host and return the corresponding network address.
  * Returns TODO
  */
-int network_translate_hostname(char* hostname, network_address_t address);
+int network_translate_hostname(const char* hostname, network_address_t address);
 
 /*
  * Compares network addresses. Returns 0 if different and
  * nonzero if identical.
  */
-int network_compare_network_addresses(network_address_t addr1,
-                                      network_address_t addr2);
+int network_compare_network_addresses(const network_address_t addr1,
+                                      const network_address_t addr2);
 
 /*
  * write the network address in a human-readable way, into a buffer of length
  * "length"; will return -1 if the string is too short, else 0. the address
  * will be in the form "the.text.ip.address:port", e.g. "128.84.223.105:20".
- * Note: the port is an actual UDP port, not a miniport! 
+ * Note: the port is an actual UDP port, not a miniport!
  */
-int network_format_address(network_address_t address, char* string, int length);
+int network_format_address(const network_address_t address, char* string, int length);
 
 /* zero the address, so as to make it invalid */
 void network_address_blankify(network_address_t addr);
 
 /* copy address "original" to address "copy". */
-void network_address_copy(network_address_t original, network_address_t copy);
+void network_address_copy(const network_address_t original, network_address_t copy);
 
 #endif /*__NETWORK_H_*/
 

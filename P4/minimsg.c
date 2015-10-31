@@ -100,7 +100,7 @@ miniport_create_unbound(int port_number)
 }
 
 miniport_t*
-miniport_create_bound(network_address_t addr, int remote_unbound_port_number)
+miniport_create_bound(const network_address_t addr, int remote_unbound_port_number)
 {
 	assert(g_boundPortCounter >= 0); //sanity check to ensure minimsg_initialize() has been called first
 
@@ -180,7 +180,7 @@ miniport_destroy(miniport_t* miniport)
 }
 
 int
-minimsg_send(miniport_t* local_unbound_port, miniport_t* local_bound_port, minimsg_t* msg, int len)
+minimsg_send(miniport_t* local_unbound_port, const miniport_t* local_bound_port, const char* msg, int len)
 {
 	assert(g_boundPortCounter >= 0); //sanity check to ensure minimsg_initialize() has been called first
 
@@ -205,7 +205,7 @@ minimsg_send(miniport_t* local_unbound_port, miniport_t* local_bound_port, minim
 }
 
 int
-minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_port, minimsg_t* msg, int *len)
+minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_port, char* msg, int *len)
 {
 	assert(g_boundPortCounter >= 0); //sanity check to ensure minimsg_initialize() has been called first
 
@@ -255,6 +255,7 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	//Get header and destination port
 	mini_header_t receivedHeader;
 	memcpy(&receivedHeader, arg->buffer, sizeof(mini_header_t));
+	AbortOnCondition(receivedHeader.protocol != PROTOCOL_MINIDATAGRAM, "The protocol is unsupported.");
 	int destPort = (int)unpack_unsigned_short(receivedHeader.destination_port);
 	assert(destPort >= UNBOUNDED_PORT_START && destPort <= UNBOUNDED_PORT_END); // sanity checking
 

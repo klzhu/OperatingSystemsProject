@@ -74,8 +74,8 @@ static network_address_t broadcast_addr = { 0 };
 
 /* forward definition */
 void start_network_poll(interrupt_handler_t, int*);
-void network_address_to_sockaddr(network_address_t addr, struct sockaddr_in* sin);
-void sockaddr_to_network_address(struct sockaddr_in* sin, network_address_t addr);
+void network_address_to_sockaddr(const network_address_t addr, struct sockaddr_in* sin);
+void sockaddr_to_network_address(const struct sockaddr_in* sin, network_address_t addr);
 
 /* zero the address, so as to make it invalid */
 void network_address_blankify(network_address_t addr) {
@@ -84,14 +84,14 @@ void network_address_blankify(network_address_t addr) {
 
 /** Copy address "original" to address "copy". */
 void
-network_address_copy(network_address_t original, network_address_t copy) {
+network_address_copy(const network_address_t original, network_address_t copy) {
   copy[0] = original[0];
   copy[1] = original[1];
 }
 
 /* Compare addresses. Return 1 if same, 0 if different. */
 int
-network_address_same(network_address_t a, network_address_t b) {
+network_address_same(const network_address_t a, const network_address_t b) {
   return (a[0] == b[0] && a[1] == b[1]);
 }
 
@@ -103,9 +103,9 @@ network_printaddr(network_address_t addr) {
 }
 
 static int
-send_pkt(network_address_t dest_address, 
-         int hdr_len, char* hdr, 
-         int data_len, char* data) {
+send_pkt(const network_address_t dest_address,
+         int hdr_len, const char* hdr,
+         int data_len, const char* data) {
   int cc;
   struct sockaddr_in sin;
   char* bufp;
@@ -145,8 +145,8 @@ send_pkt(network_address_t dest_address,
 }
 
 int 
-network_send_pkt(network_address_t dest_address, int hdr_len, 
-                 char* hdr, int data_len, char* data) {
+network_send_pkt(const network_address_t dest_address, int hdr_len, 
+                 const char* hdr, int data_len, const char* data) {
 
   if (synthetic_network) {
     if(genrand() < loss_rate)
@@ -168,7 +168,7 @@ network_get_my_address(network_address_t my_address) {
 }
 
 int
-network_translate_hostname(char* hostname, network_address_t address) {
+network_translate_hostname(const char* hostname, network_address_t address) {
   struct hostent* host;
   unsigned int iaddr;
   //printf("resolving name %s\n",hostname);
@@ -193,28 +193,28 @@ network_translate_hostname(char* hostname, network_address_t address) {
    }  
 }
 
-int 
-network_compare_network_addresses(network_address_t addr1,
-                                  network_address_t addr2){
+int
+network_compare_network_addresses(const network_address_t addr1,
+                                  const network_address_t addr2){
   return (addr1[0]==addr2[0] && addr1[1]==addr2[1]);
 }
 
 void
-sockaddr_to_network_address(struct sockaddr_in* sin, network_address_t addr) {
+sockaddr_to_network_address(const struct sockaddr_in* sin, network_address_t addr) {
   addr[0] = sin->sin_addr.s_addr;
   addr[1] = sin->sin_port;
 }
 
 void
-network_address_to_sockaddr(network_address_t addr, struct sockaddr_in* sin) {
+network_address_to_sockaddr(const network_address_t addr, struct sockaddr_in* sin) {
   memset(sin, 0, sizeof(*sin));
   sin->sin_addr.s_addr = addr[0];
   sin->sin_port = (short)addr[1];
   sin->sin_family = SOCK_DGRAM;
 }
 
-int 
-network_format_address(network_address_t address, char* string, int length) {
+int
+network_format_address(const network_address_t address, char* string, int length) {
   struct in_addr ipaddr;
   char* textaddr;
   int addrlen;
@@ -241,7 +241,7 @@ network_udp_ports(short myportnum, short otherportnum) {
 
 void
 network_synthetic_params(double loss, double duplication) {
-  synthetic_network = 1;        
+  synthetic_network = true;
   loss_rate = loss;
   duplication_rate = duplication;
 }
@@ -420,7 +420,7 @@ int network_poll(void* arg) {
 
   s = (int *) arg;
 
-  for (;;) {
+  while(true) {
 
     /* we rely on run_user_handler to destroy this data structure */
     if (DEBUG)
