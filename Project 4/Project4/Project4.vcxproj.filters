@@ -1,0 +1,181 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="interrupts.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="interrupts_private.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="machineprimitives.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="miniheader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="minimsg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="minisocket.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="minithread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="multilevel_queue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="network.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="random.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="synch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="alarm.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="defs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="conn-network1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="conn-network2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="conn-network3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="end.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="interrupts.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="machineprimitives.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="machineprimitives_x86_64.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="miniheader.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="minimsg.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="minisocket.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="minithread.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="multilevel_queue.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="myNetworkTest.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network4.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network5.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network6.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network7.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network8.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network9.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network10.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="qtest.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="random.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sieve.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="start.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="synch.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="alarm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="barbershop.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="buffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="common.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="machineprimitives_x86_64_asm.S" />
+    <None Include="Makefile" />
+  </ItemGroup>
+</Project>
