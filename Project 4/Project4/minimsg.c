@@ -255,6 +255,7 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	if (sizeof(arg->buffer) - sizeof(mini_header_t) > MINIMSG_MAX_MSG_SIZE)
 	{
 		set_interrupt_level(old_level); //restore interrupt level
+		free(arg);
 		return;
 	}
 
@@ -267,6 +268,7 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	if (g_unboundedPortPtrs[destPort] == NULL)
 	{
 		set_interrupt_level(old_level); //restore interrupt level
+		free(arg);
 		return;
 	}
 

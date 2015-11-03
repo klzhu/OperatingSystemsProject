@@ -10,6 +10,7 @@
 #include "synch.h"
 #include "defs.h"
 #include "interrupts.h"
+#include "miniheader.h"
 
  // ---- Constants ---- //
 #define CLIENT_PORT_START		32768	/* The beginning port number for client port */
@@ -44,7 +45,7 @@ void minisocket_initialize()
 	memset(g_clientPortAvail, 1, sizeof(g_clientPortAvail)); //initialize array element to true, every port is avail when we initialize
 	memset(g_serverPortPtrs, 0, sizeof(g_serverPortPtrs)); //set array of unbounded port pointers to null
 	g_semaLock = semaphore_create(); AbortOnCondition(g_semaLock == NULL, "g_semaLock failed in minimsg_initialize()");
-	semaphore_initialize(g_semaLock, 1); //init sema to 1 (available).
+	semaphore_initialize(g_semaLock, 1); //init sema to 1 (available)
 }
 
 minisocket_t* minisocket_server_create(int port, minisocket_error *error)
@@ -96,7 +97,46 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 		semaphore_initialize(s_minisocket->data_ready, 0); //initialize our waiting sema
 		g_serverPortPtrs[port] = s_minisocket; //update our array of pointers for our unbounded ports
 
+		/*
+		//establish handshake
+		while (true)
+		{
+			semaphore_P(s_minisocket->data_ready); //wait until we receive a message
+			network_interrupt_arg_t* dequeuedPacket = NULL;
+			int dequeueSuccess = queue_dequeue(s_minisocket->incoming_data, (void**)&dequeuedPacket);
+			if (dequeueSuccess == -1)
+			{
+				*error = SOCKET_RECEIVEERROR;
+				return NULL;
+			}
 
+			//validate dequeued packet size
+			if (dequeuedPacket->size != sizeof(mini_header_reliable_t))
+			{
+				free(dequeuedPacket); //our packet is not of valid size, so free and continue waiting
+			}
+			else {
+				mini_header_reliable_t receivedHeader;
+				memcpy(&receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_reliable_t));
+				if (receivedHeader.message_type != MSG_SYN)
+				{
+					free(dequeuedPacket); //our packet is not MSG_SYN, so discard it
+				}
+				else
+				{
+					//we've received MSG_SYN, send a MSG_SYNACK back
+					s_minisocket->seq_number = 0;
+					s_minisocket->ack_number = 1;
+				}
+			}
+
+			mini_header_reliable_t receivedHeader;
+			memcpy(&receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_reliable_t));
+			if (receivedHeader.message_type != MSG_SYN)
+			{
+
+			}
+		}*/
 	}
 
 	//set_interrupt_level(old_level); //restore interrupt level as we leave critical section
@@ -122,8 +162,8 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 	}
 
 	c_minisocket->port_type = 'c'; //set minisocket type to client
-	c_minisocket->client_port.remote_unbound_port = port;
-	memcpy(c_minisocket->client_port.remote_addr, addr, sizeof(network_address_t));
+	c_minisocket->port_number = port;
+	memcpy(c_minisocket->remote_addr, addr, sizeof(network_address_t));
 
 	semaphore_P(g_semaLock); //critical section to access global variables g_clientPortCounter & g_clientPortAvail
 	if (g_clientPortCounter > CLIENT_PORT_END) //if we've reached the end of our port space, we need to search for an available port number
