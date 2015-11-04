@@ -119,7 +119,7 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 		semaphore_initialize(s_minisocket->data_ready, 0); //initialize our data ready sema
 		g_serverPortPtrs[port] = s_minisocket; //update our array of pointers for our unbounded ports
 		
-		//establish handshake
+		/*//establish handshake
 		while (s_minisocket->status != CONNECTED)
 		{
 			if (s_minisocket->status == WAIT_SYN) semaphore_P(s_minisocket->data_ready); //wait until we receive our first message, which should be SYN
@@ -131,13 +131,13 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 			if (dequeueSuccess == -1)
 			{
 				semaphore_destroy(s_minisocket->data_ready); //free newly allocated space for data ready sema
-				int dequeueSuccess = queue_free_nodes_and_queue(s_minisocket->incoming_data); //error check needed here?
+				queue_free_nodes_and_queue(s_minisocket->incoming_data); //error check needed here?
 				free(s_minisocket); //free our newly created minisocket
 				*error = SOCKET_RECEIVEERROR;
 				return NULL;
 			}
 
-			mini_header_reliable_t *receivedHeaderPtr = dequeuedPacket->buffer;
+			mini_header_reliable_t *receivedHeaderPtr = (mini_header_reliable_t*)dequeuedPacket->buffer;
 			if (s_minisocket->status == WAIT_SYN) {
 				s_minisocket->seq_number = 0;
 				s_minisocket->ack_number = 1;
@@ -161,7 +161,7 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 					minisocket_send_control_msg(s_minisocket, MSG_FIN); 
 				s_minisocket->status = CONNECTED;
 			}
-		}
+		}*/
 	}
 
 	*error = SOCKET_NOERROR;
@@ -238,6 +238,7 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		g_clientPortCounter++; //increment counter
 	}
 
+	/*
 	//establish handshake
 	while (c_minisocket->status != CONNECTED)
 	{
@@ -262,7 +263,7 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		}
 		c_minisocket->status = CONNECTED;
 	}
-
+	*/
 	*error = SOCKET_NOERROR;
 	return c_minisocket;
 }
@@ -298,7 +299,7 @@ int minisocket_send_internal(minisocket_t *socket, const char *msg, int len, min
 		deregister_alarm(retryAlarm); //once we wake, dereg alarm if it hasn't gone off
 
 		//check to see if we've received a packet. if we have, check to see if it is the ACK we're waiting for. If not, check the while loop constraints
-		if (queue_length(socket->incoming_data > 0)) //we have a packet
+		if (queue_length(socket->incoming_data) > 0) //we have a packet
 		{
 			network_interrupt_arg_t* dequeuedPacket = NULL;
 			int dequeueSuccess = queue_dequeue(socket->incoming_data, (void**)&dequeuedPacket);
@@ -310,8 +311,9 @@ int minisocket_send_internal(minisocket_t *socket, const char *msg, int len, min
 			}
 
 			//RECHECK THE CASES, I don't think this is a comprehensive or correct yet
-			mini_header_reliable_t *receivedHeaderPtr = dequeuedPacket->buffer;
-			if (socket->status == WAIT_SYNACK && receivedHeaderPtr->message_type == MSG_SYNACK && receivedHeaderPtr->ack_number == MSG_SYNACK_ACK_NUM) {
+			mini_header_reliable_t *receivedHeaderPtr = (mini_header_reliable_t*)dequeuedPacket->buffer;
+			unsigned int headerAckNum = unpack_unsigned_int(receivedHeaderPtr->ack_number);
+			if (socket->status == WAIT_SYNACK && receivedHeaderPtr->message_type == MSG_SYNACK && headerAckNum == MSG_SYNACK_ACK_NUM) {
 				free(dequeuedPacket);
 				break;
 			}
@@ -319,11 +321,11 @@ int minisocket_send_internal(minisocket_t *socket, const char *msg, int len, min
 				free(dequeuedPacket);
 				break;
 			}
-			else if (socket->status == CONNECTED && receivedHeaderPtr->message_type == MSG_ACK && receivedHeaderPtr->ack_number == socket->ack_number + len) {
+			else if (socket->status == CONNECTED && receivedHeaderPtr->message_type == MSG_ACK && headerAckNum == socket->ack_number + len) {
 				free(dequeuedPacket);
 				break;
 			}
-			else if (socket->status == CLOSING && receivedHeaderPtr->message_type == MSG_ACK && receivedHeaderPtr->ack_number == socket->ack_number + 1) {
+			else if (socket->status == CLOSING && receivedHeaderPtr->message_type == MSG_ACK && headerAckNum == socket->ack_number + 1) {
 				free(dequeuedPacket);
 				break;
 			}
