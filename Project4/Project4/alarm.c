@@ -110,7 +110,10 @@ alarm_check_and_run() {
 		}
 		else { //first alarm is scheduled to go off
 			int dequeueSuccess = queue_dequeue(g_alarmsQueue, (void**)&currAlarm); //remove first alarm from queue
-			if (dequeueSuccess == -1) return -1; //failed to dequeue
+			if (dequeueSuccess == -1) {
+				set_interrupt_level(old_level); //restore interrupt level
+				return -1; //failed to dequeue
+			}
 			currAlarm->alarmHandler(currAlarm->alarmHandlerArg); //call alarm's alarm handler
 			free(currAlarm); 
 		}

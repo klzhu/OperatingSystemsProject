@@ -213,7 +213,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	if (new_local_bound_port == NULL || local_unbound_port == NULL|| msg == NULL || len == NULL || *len < 0
 		|| local_unbound_port->port_type != 'u') return -1;
 
-	assert(local_unbound_port->unbound_port.datagrams_ready != NULL || local_unbound_port->unbound_port.datagrams_ready != NULL);
+	assert(local_unbound_port->unbound_port.datagrams_ready != NULL && local_unbound_port->unbound_port.datagrams_ready != NULL);
 
 	semaphore_P(local_unbound_port->unbound_port.datagrams_ready); //P the semaphore, if the count is 0 we're blocked until packet arrives
 
@@ -226,7 +226,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	set_interrupt_level(old_level); //end of critical session to restore interrupt level
 
 	//get our header and message from the dequeued packet
-	mini_header_t *receivedHeaderPtr = dequeuedPacket->buffer;
+	mini_header_t *receivedHeaderPtr = (mini_header_t*)dequeuedPacket->buffer;
 	//set *len to the msg length to be copied: if the length of the message received is >= *len, no change to *len. Otherwise, set *len to the length of our received message
 	if (dequeuedPacket->size - sizeof(mini_header_t) < *len) *len = dequeuedPacket->size - sizeof(mini_header_t);
 	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), *len); // msg is after header
@@ -236,7 +236,7 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	assert(sourcePort >= UNBOUNDED_PORT_START && sourcePort <= UNBOUNDED_PORT_END); //make sure source port num is valid
 	network_address_t remoteAddr;
 	unpack_address(receivedHeaderPtr->source_address, remoteAddr);	// get source's network address
-	free(dequeuedPacket);	// release the memory allocated to the packet
+	free(dequeuedPacket); // release the memory allocated to the packet
 
 	*new_local_bound_port = miniport_create_bound(remoteAddr, sourcePort);	// create a bound port
 	if (*new_local_bound_port == NULL) return -1;
@@ -255,13 +255,12 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	}
 
 	//Get header and destination port
-	mini_header_t *receivedHeaderPtr = arg->buffer;
+	mini_header_t *receivedHeaderPtr = (mini_header_t*)arg->buffer;
 	int destPort = (int)unpack_unsigned_short(receivedHeaderPtr->destination_port);
 	assert(receivedHeaderPtr->protocol == PROTOCOL_MINIDATAGRAM);
-	AbortOnCondition(destPort < UNBOUNDED_PORT_START || destPort > UNBOUNDED_PORT_END, "Invalid destination port number.");
 
-	//if the unbounded port has not been initialized, throw away the packet
-	if (g_unboundedPortPtrs[destPort] == NULL)
+	//if dest port is invalid or the unbounded port has not been initialized, throw away the packet
+	if (destPort < UNBOUNDED_PORT_START || destPort > UNBOUNDED_PORT_END || g_unboundedPortPtrs[destPort] == NULL)
 	{
 		free(arg);
 		return;

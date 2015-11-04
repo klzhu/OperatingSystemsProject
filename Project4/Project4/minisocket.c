@@ -13,30 +13,38 @@
 #include "miniheader.h"
 #include "alarm.h"
 
+ //   -----   Private helper functions  -----  
+ // This function performs minisocket_send and takes in a msg type.
+int minisocket_send_internal(minisocket_t *socket, const char *msg, int len, minisocket_error *error, char msgType);
+
  // ---- Constants ---- //
 #define CLIENT_PORT_START		32768	/* The beginning port number for client port */
 #define CLIENT_PORT_END			65535   /* The end port number for client port */
 #define SERVER_PORT_START		0		/* The beginning port number for server port */
 #define SERVER_PORT_END			32767	/* The end port number for server port */
 #define TRANSMISSION_TRIES		7		/* Number of times we try to establish a connection */
+#define MSG_SYNACK_ACK_NUM		1		/* The expected ack number to receive when we receive a MSG_SYNACK */
+#define MSG_SYN_ACK_NUM			0		/* The expected ack number to receive whenw e receive a MSG_SYN */
+#define MSG_ACK_INIT_ACK_NUM	1		/* The expected ack number to receive for our first MSG_ACK during our handshake*/
 
-const int TRANSMISSION_RETRY_TIMEOUTS[] = { 100, 200, 400, 800, 1600, 3200, 6400 }; //transmission timeouts in ms for each try
+const int TRANSMISSION_RETRY_DELAYS[] = { 100, 200, 400, 800, 1600, 3200, 6400 }; //transmission timeouts in ms for each try
 
  // ---- Global Variables ---- //
 int g_clientPortCounter = -1; //for incrementally assigning bounded ports
-bool g_clientPortAvail[CLIENT_PORT_END - CLIENT_PORT_START + 1]; //track availability of client ports once g_clientPortCounter goes above max value
-semaphore_t* g_semaLock = NULL; // used as mutex to protect access to g_boundPortCounter & g_boundedPortAvail
+minisocket_t* g_clientPortPtrs[CLIENT_PORT_END - CLIENT_PORT_START + 1]; //tracks the pointers to all of our client ports
 
 //g_serverPortPtrs is protected by disabling interrupt since methods accessing this is always quick
 minisocket_t* g_serverPortPtrs[SERVER_PORT_END - SERVER_PORT_START + 1]; //tracks the pointers to all of our server ports
 
 //Minisocket statuses
-typedef enum { WAIT_SYN, WAIT_SYNACK, WAIT_ACK, CONNECTED } socket_state; // socket's states.
+typedef enum { WAIT_SYN, WAIT_SYNACK, WAIT_ACK, CONNECTED, CLOSING, CLOSED } socket_state; // socket's states.
 
 /*****	 alarm handler	 *****/
+// This function wakes up the thread that the alarm was creating for by Ving the waiting sema
+// arg is the minisocket retry sema to V
 void minisocket_alarm_handler_function(void* arg)
 {
-	
+	semaphore_V((semaphore_t*)arg);
 }
 
 struct minisocket
@@ -50,49 +58,15 @@ struct minisocket
 	unsigned int seq_number;
 	unsigned int ack_number;
 	socket_state status;
-	semaphore_t *transWaitSema; //wait sema for thread to sleep on when we are waiting to retry transmission attempts
+	int transmissionTries; //tracks the number of times we've attempted to send our transmission
+	semaphore_t *retrySema; //wait sema for thread to sleep on when we are waiting to retry transmission attempts
 };
 
 void minisocket_initialize()
 {
 	g_clientPortCounter = CLIENT_PORT_START; //client port range from 32768 - 65535
-	memset(g_clientPortAvail, 1, sizeof(g_clientPortAvail)); //initialize array element to true, every port is avail when we initialize
-	memset(g_serverPortPtrs, 0, sizeof(g_serverPortPtrs)); //set array of unbounded port pointers to null
-	g_semaLock = semaphore_create(); AbortOnCondition(g_semaLock == NULL, "g_semaLock failed in minimsg_initialize()");
-	semaphore_initialize(g_semaLock, 1); //init sema to 1 (available)
-}
-
-//use this fcn to send the following control msgs: SYN, SYNACK, and FIN. In these cases, we send no data. Return -1 if error, 0 otherwise
-int minisocket_send_control_msg(minisocket_t *minisocket, char msgType)
-{
-	//construct the header to send
-	mini_header_reliable_t controlHdr;
-	controlHdr.protocol = PROTOCOL_MINISTREAM;
-	controlHdr.message_type = msgType;
-	pack_unsigned_int(controlHdr.seq_number, 0);
-	pack_unsigned_int(controlHdr.ack_number, 0);
-	network_address_t my_address;
-	network_get_my_address(my_address);
-	pack_address(controlHdr.source_address, my_address);
-	pack_unsigned_short(controlHdr.source_port, minisocket->port_number);
-	pack_address(controlHdr.destination_address, minisocket->remote_addr);
-	pack_unsigned_short(controlHdr.destination_port, minisocket->remote_port_number);
-
-	//set the seq and ack numbers
-	if (msgType == MSG_SYN) {
-		pack_unsigned_int(controlHdr.seq_number, 0);
-		pack_unsigned_int(controlHdr.ack_number, 0);
-	}
-	else if (msgType == MSG_SYNACK) {
-		pack_unsigned_int(controlHdr.seq_number, 0);
-		pack_unsigned_int(controlHdr.ack_number, 1);
-	}
-
-	//send the control msg now
-	int sendSuccess = network_send_pkt(minisocket->remote_addr, sizeof(mini_header_reliable_t), (char*)&controlHdr, 0, NULL);
-
-	if (sendSuccess == -1) return -1; //failed to send error
-	else return 0; //else succeeded
+	memset(g_clientPortPtrs, 0, sizeof(g_clientPortPtrs)); //set array of client port pointers to null
+	memset(g_serverPortPtrs, 0, sizeof(g_serverPortPtrs)); //set array of server port pointers to null
 }
 
 minisocket_t* minisocket_server_create(int port, minisocket_error *error)
@@ -214,6 +188,8 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 
 	c_minisocket->port_type = 'c'; //set minisocket type to client
 	c_minisocket->status = WAIT_SYNACK;
+	c_minisocket->ack_number = 0;
+	c_minisocket->seq_number = 0;
 	c_minisocket->remote_port_number = port;
 	network_address_copy(addr, c_minisocket->remote_addr);
 
@@ -240,7 +216,7 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 	if (g_clientPortCounter > CLIENT_PORT_END) //if we've reached the end of our port space, we need to search for an available port number
 	{
 		int k = 0;
-		while (k <= CLIENT_PORT_END - CLIENT_PORT_START && g_clientPortAvail[k] == false)
+		while (k <= CLIENT_PORT_END - CLIENT_PORT_START && g_clientPortPtrs[k] != NULL)
 			k++; // find the first element equaling true
 
 		if (k > CLIENT_PORT_END - CLIENT_PORT_START) { //if no port is available
@@ -252,13 +228,13 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		}
 		else { // found an available port
 			c_minisocket->port_number = k + CLIENT_PORT_START; // set our port num to the available port num
-			g_clientPortAvail[k] = false; //set the port to be used
+			g_clientPortPtrs[k] = c_minisocket; //set the port to point to our pointer
 		}
 	}
 	else //otherwise, set our port number to g_boundPortCounter
 	{
 		c_minisocket->port_number = g_clientPortCounter;
-		g_clientPortAvail[g_clientPortCounter - CLIENT_PORT_START] = false; //set the avail of that port to false
+		g_clientPortPtrs[g_clientPortCounter - CLIENT_PORT_START] = c_minisocket; //set the avail of that port to false
 		g_clientPortCounter++; //increment counter
 	}
 
@@ -291,9 +267,92 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 	return c_minisocket;
 }
 
+//performs minisocket_send but also takes in the msgType so it can be called directly during handshake step
+int minisocket_send_internal(minisocket_t *socket, const char *msg, int len, minisocket_error *error, char msgType)
+{
+	//pack the header to send
+	mini_header_reliable_t header;
+	header.protocol = PROTOCOL_MINISTREAM;
+	header.message_type = msgType;
+	pack_unsigned_int(header.seq_number, socket->seq_number);
+	pack_unsigned_int(header.ack_number, socket->ack_number);
+	network_address_t my_address;
+	network_get_my_address(my_address);
+	pack_address(header.source_address, my_address);
+	pack_unsigned_short(header.source_port, socket->port_number);
+	pack_address(header.destination_address, socket->remote_addr);
+	pack_unsigned_short(header.destination_port, socket->remote_port_number);
+
+	int sentBytes;
+	while (socket->transmissionTries <= TRANSMISSION_TRIES) { //else succeeded, if we haven't tried to transmit 7 times yet, set up an alarm
+		sentBytes = network_send_pkt(socket->remote_addr, sizeof(mini_header_reliable_t), (char*)&header, len, msg); //send the msg now
+		if (sentBytes == -1) { //failed to send error
+			socket->transmissionTries = 0; //reset the transmission tries
+			*error = SOCKET_SENDERROR;
+			return -1;
+		}
+
+		alarm_id retryAlarm = register_alarm(TRANSMISSION_RETRY_DELAYS[socket->transmissionTries], minisocket_alarm_handler_function, socket->retrySema);
+		socket->transmissionTries++;
+		semaphore_P(socket->retrySema);
+		deregister_alarm(retryAlarm); //once we wake, dereg alarm if it hasn't gone off
+
+		//check to see if we've received a packet. if we have, check to see if it is the ACK we're waiting for. If not, check the while loop constraints
+		if (queue_length(socket->incoming_data > 0)) //we have a packet
+		{
+			network_interrupt_arg_t* dequeuedPacket = NULL;
+			int dequeueSuccess = queue_dequeue(socket->incoming_data, (void**)&dequeuedPacket);
+			if (dequeueSuccess == -1)
+			{
+				socket->transmissionTries = 0; //reset the transmission tries
+				*error = SOCKET_RECEIVEERROR;
+				return -1;
+			}
+
+			//RECHECK THE CASES, I don't think this is a comprehensive or correct yet
+			mini_header_reliable_t *receivedHeaderPtr = dequeuedPacket->buffer;
+			if (socket->status == WAIT_SYNACK && receivedHeaderPtr->message_type == MSG_SYNACK && receivedHeaderPtr->ack_number == MSG_SYNACK_ACK_NUM) {
+				free(dequeuedPacket);
+				break;
+			}
+			else if (socket->status == WAIT_ACK && receivedHeaderPtr->message_type == MSG_ACK) {
+				free(dequeuedPacket);
+				break;
+			}
+			else if (socket->status == CONNECTED && receivedHeaderPtr->message_type == MSG_ACK && receivedHeaderPtr->ack_number == socket->ack_number + len) {
+				free(dequeuedPacket);
+				break;
+			}
+			else if (socket->status == CLOSING && receivedHeaderPtr->message_type == MSG_ACK && receivedHeaderPtr->ack_number == socket->ack_number + 1) {
+				free(dequeuedPacket);
+				break;
+			}
+			
+			free(dequeuedPacket); //if none of our above cases, free our packet and check the while loop constraints
+		}
+	}
+
+	//if we exited the above loop, we've either timed out or received an ACK
+	if (socket->transmissionTries > 7) { //we timed out
+		socket->transmissionTries = 0;
+		*error = SOCKET_NOSERVER;
+		return -1;
+	}
+
+	else {
+		*error = SOCKET_NOERROR;
+		return sentBytes - sizeof(mini_header_reliable_t); //return the number of sent bytes excluding the header
+	}
+}
+
 int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_error *error)
 {
-    // TODO
+    //validate inputs
+	if (socket == NULL || msg == NULL || len < 0 || (len + sizeof(mini_header_reliable_t) > MAX_NETWORK_PKT_SIZE))
+	{
+		*error = SOCKET_INVALIDPARAMS;
+		return -1;
+	}
     return -1;
 }
 
@@ -306,11 +365,47 @@ void minisocket_close(minisocket_t *socket)
 {
 	//validate inputs
 	AbortOnCondition(socket == NULL, "Null input seen in minisocket_close()");
+
+
    // TODO
 }
 
 void minisocket_network_handler(network_interrupt_arg_t* arg)
 {
-	// CHECK for minisocket status
-	//TODO
+	//get the header and dest port
+	mini_header_reliable_t *receivedHeaderPtr = (mini_header_reliable_t*)arg->buffer;
+	int destPort = (int)unpack_unsigned_short(receivedHeaderPtr->destination_port);
+	assert(receivedHeaderPtr->protocol == PROTOCOL_MINISTREAM);
+
+	//if dest port is invalid or port has not been initialized, drop the packet
+	if (destPort < SERVER_PORT_START || destPort > CLIENT_PORT_END)
+	{
+		free(arg);
+		return;
+	}
+
+	if (destPort >= SERVER_PORT_START && destPort <= SERVER_PORT_END) //the dest port is a server port
+	{
+		if (g_serverPortPtrs[destPort] == NULL) { //if dest server port has not been created, drop packet and return
+			free(arg);
+			return;
+		}
+		else { //else, enqueue packet and V data ready semaphore
+			assert(g_serverPortPtrs[destPort]->port_type == 's' && g_serverPortPtrs[destPort]->data_ready != NULL
+				&& g_serverPortPtrs[destPort]->incoming_data != NULL);
+			int appendSuccess = queue_append(g_serverPortPtrs[destPort]->incoming_data, (void*)arg); //enqueue the packet
+			AbortOnCondition(appendSuccess == -1, "Queue_append failed in minimsg_network_handler()");
+			semaphore_V(g_serverPortPtrs[destPort]->data_ready); //V the semaphore
+		}
+	}
+
+	else { //dest port is a client port
+		if (g_clientPortPtrs[destPort] == NULL) { //if dest client port hasn't been created, drop packet and return
+			assert(g_clientPortPtrs[destPort]->port_type == 'c' && g_clientPortPtrs[destPort]->data_ready != NULL
+				&& g_clientPortPtrs[destPort]->incoming_data != NULL);
+			int appendSuccess = queue_append(g_clientPortPtrs[destPort]->incoming_data, (void*)arg); //enqueue the packet
+			AbortOnCondition(appendSuccess == -1, "Queue_append failed in minimsg_network_handler()");
+			semaphore_V(g_clientPortPtrs[destPort]->data_ready); //V the semaphore
+		}
+	}
 }

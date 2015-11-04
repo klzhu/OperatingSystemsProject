@@ -29,7 +29,13 @@ common_network_handler(network_interrupt_arg_t* arg)
 
 	//Get header and destination port
 	mini_header_t *receivedHeaderPtr = arg->buffer;
-	AbortOnCondition(receivedHeaderPtr->protocol != PROTOCOL_MINIDATAGRAM || receivedHeaderPtr->protocol != PROTOCOL_MINISTREAM, "Invalid protocols.");
+	//if the protocol is not supported, drop the packet
+	if (receivedHeaderPtr->protocol != PROTOCOL_MINIDATAGRAM || receivedHeaderPtr->protocol != PROTOCOL_MINISTREAM)
+	{
+		free(arg);
+		set_interrupt_level(old_level); //restore interrupt level
+		return;
+	}
 
 	//check if it is a UDP or TCP packet
 	if (receivedHeaderPtr->protocol == PROTOCOL_MINIDATAGRAM) //if UDP packet
