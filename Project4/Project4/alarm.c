@@ -69,7 +69,7 @@ register_alarm(int delay, alarm_handler_t alarm, void *arg) {
 /* see alarm.h */
 int
 deregister_alarm(alarm_id alarm) {
-	AbortOnCondition(alarm == NULL || g_alarmsQueue == NULL, "Invalid input alarm or alarmsQueue in deregister_alarm()");
+	if (alarm == NULL || g_alarmsQueue == NULL) return -1; //if error, return -1
 
 	//disable interrupts as we access our global queue
 	interrupt_level_t old_level = set_interrupt_level(DISABLED);

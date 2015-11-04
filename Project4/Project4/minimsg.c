@@ -105,14 +105,14 @@ miniport_create_bound(const network_address_t addr, int remote_unbound_port_numb
 	assert(g_boundPortCounter >= 0); //sanity check to ensure minimsg_initialize() has been called first
 
 	//validate input, unbound port number should be between 0 - 32767
-	if (remote_unbound_port_number < UNBOUNDED_PORT_START || remote_unbound_port_number > UNBOUNDED_PORT_END) return NULL;
+	if (addr == NULL || remote_unbound_port_number < UNBOUNDED_PORT_START || remote_unbound_port_number > UNBOUNDED_PORT_END) return NULL;
 
 	miniport_t* b_miniport = malloc(sizeof(miniport_t));
 	if (b_miniport == NULL) return NULL; //malloc errored
 
 	b_miniport->port_type = 'b'; //set miniport type to bounded
 	b_miniport->bound_port.remote_unbound_port = remote_unbound_port_number;
-	memcpy(b_miniport->bound_port.remote_addr, addr, sizeof(network_address_t));
+	network_address_copy(addr, b_miniport->bound_port.remote_addr);
 
 	semaphore_P(g_semaLock); //critical section to access global variables g_boundPortCounter & g_boundedPortAvail
 	if (g_boundPortCounter > BOUNDED_PORT_END) //if we've reached the end of our port space, we need to search for an available port number
@@ -151,7 +151,7 @@ miniport_destroy(miniport_t* miniport)
 	AbortOnCondition(miniport == NULL, "Null argument miniport in miniport_destroy()");
 
 	//check if unbounded port, if so, we must free our queue and sema
-	if (miniport->port_type == 'u')
+	if (miniport->port_type == 'u') //if unbounded port
 	{
 		assert(miniport->unbound_port.datagrams_ready != NULL && miniport->unbound_port.incoming_data != NULL
 			&& miniport->port_number >= UNBOUNDED_PORT_START && miniport->port_number <= UNBOUNDED_PORT_END); //self check
@@ -211,7 +211,9 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 
 	//validate input
 	if (new_local_bound_port == NULL || local_unbound_port == NULL|| msg == NULL || len == NULL || *len < 0
-		|| local_unbound_port->port_type != 'u' || local_unbound_port->unbound_port.datagrams_ready == NULL || local_unbound_port->unbound_port.datagrams_ready == NULL) return -1;
+		|| local_unbound_port->port_type != 'u') return -1;
+
+	assert(local_unbound_port->unbound_port.datagrams_ready != NULL || local_unbound_port->unbound_port.datagrams_ready != NULL);
 
 	semaphore_P(local_unbound_port->unbound_port.datagrams_ready); //P the semaphore, if the count is 0 we're blocked until packet arrives
 
@@ -223,21 +225,17 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 	AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minimsg_receive()");
 	set_interrupt_level(old_level); //end of critical session to restore interrupt level
 
-	//Our packet size should be valid, if not, return -1
-	if (dequeuedPacket->size < sizeof(mini_header_t)) return -1;
-
 	//get our header and message from the dequeued packet
-	mini_header_t receivedHeader;
-	memcpy(&receivedHeader, dequeuedPacket->buffer, sizeof(mini_header_t));
+	mini_header_t *receivedHeaderPtr = dequeuedPacket->buffer;
 	//set *len to the msg length to be copied: if the length of the message received is >= *len, no change to *len. Otherwise, set *len to the length of our received message
 	if (dequeuedPacket->size - sizeof(mini_header_t) < *len) *len = dequeuedPacket->size - sizeof(mini_header_t);
 	memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_t), *len); // msg is after header
 
 	//create our new local bound port pointed back to the sender
-	int sourcePort = (int)unpack_unsigned_short(receivedHeader.source_port);	// get source's listening port
+	int sourcePort = (int)unpack_unsigned_short(receivedHeaderPtr->source_port);	// get source's listening port
 	assert(sourcePort >= UNBOUNDED_PORT_START && sourcePort <= UNBOUNDED_PORT_END); //make sure source port num is valid
 	network_address_t remoteAddr;
-	unpack_address(receivedHeader.source_address, remoteAddr);	// get source's network address
+	unpack_address(receivedHeaderPtr->source_address, remoteAddr);	// get source's network address
 	free(dequeuedPacket);	// release the memory allocated to the packet
 
 	*new_local_bound_port = miniport_create_bound(remoteAddr, sourcePort);	// create a bound port
@@ -249,25 +247,22 @@ minimsg_receive(miniport_t* local_unbound_port, miniport_t** new_local_bound_por
 void 
 minimsg_network_handler(network_interrupt_arg_t* arg)
 {
-	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
-
 	//if packet size exceeds max size, don't enqueue it and just return
-	if (sizeof(arg->buffer) - sizeof(mini_header_t) > MINIMSG_MAX_MSG_SIZE)
+	if (arg->size - sizeof(mini_header_t) > MINIMSG_MAX_MSG_SIZE)
 	{
-		set_interrupt_level(old_level); //restore interrupt level
 		free(arg);
 		return;
 	}
 
 	//Get header and destination port
-	mini_header_t *receivedHeader = arg->buffer;
-	int destPort = (int)unpack_unsigned_short(receivedHeader->destination_port);
-	AbortOnCondition(receivedHeader->protocol != PROTOCOL_MINIDATAGRAM || destPort < UNBOUNDED_PORT_START || destPort > UNBOUNDED_PORT_END, "Invalid packet.");
+	mini_header_t *receivedHeaderPtr = arg->buffer;
+	int destPort = (int)unpack_unsigned_short(receivedHeaderPtr->destination_port);
+	assert(receivedHeaderPtr->protocol == PROTOCOL_MINIDATAGRAM);
+	AbortOnCondition(destPort < UNBOUNDED_PORT_START || destPort > UNBOUNDED_PORT_END, "Invalid destination port number.");
 
 	//if the unbounded port has not been initialized, throw away the packet
 	if (g_unboundedPortPtrs[destPort] == NULL)
 	{
-		set_interrupt_level(old_level); //restore interrupt level
 		free(arg);
 		return;
 	}
@@ -279,6 +274,4 @@ minimsg_network_handler(network_interrupt_arg_t* arg)
 	AbortOnCondition(appendSuccess == -1, "Queue_append failed in minimsg_network_handler()");
 
 	semaphore_V(g_unboundedPortPtrs[destPort]->unbound_port.datagrams_ready);
-
-	set_interrupt_level(old_level); //restore interrupt level
 }

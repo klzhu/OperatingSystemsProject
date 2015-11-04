@@ -24,6 +24,7 @@
 #include "multilevel_queue.h"
 #include "network.h"
 #include "minimsg.h"
+#include "minisocket.h"
 
 /*
 * A minithread should be defined either in this file or in a private
@@ -34,7 +35,7 @@
 */
 
 // Forward declaration of functions defined elsewhere
-void minimsg_network_handler(network_interrupt_arg_t* arg);
+void common_network_handler(network_interrupt_arg_t* arg);
 
 //Clock interrupt period in millseconds
 const int INTERRUPT_PERIOD_IN_MILLISECONDS = 100; // set to 100ms
@@ -42,7 +43,7 @@ const int NUMBER_OF_LEVELS_OF_ML_THREAD = 4;	// Number of levels for multi-level
 const int INITIAL_THREAD_QUANTA[] = { 1, 2, 4, 8 }; // Quanta (# of interrupts) set to each level, array size must match NUMBER_OF_LEVELS_OF_ML_THREAD
 const int INITIAL_QUEUE_QUANTA[] = { 80, 40, 24, 16 }; // Quanta (# of interrupts) set to each level, array size must match NUMBER_OF_LEVELS_OF_ML_THREAD
 
-													   // ----- Global Variables ------ //
+// ----- Global Variables ------ //
 minithread_t* g_runningThread = NULL; //points to currently running thread
 minithread_t* g_idleThread = NULL; //our idle thread that runs if no threads are left to run
 minithread_t* g_reaperThread = NULL; //thread to clean up threads in the zombie queue
@@ -412,8 +413,9 @@ minithread_system_initialize(proc_t mainproc, arg_t mainarg)
 	g_runningThread->status = RUNNING;
 
 	minithread_clock_init(INTERRUPT_PERIOD_IN_MILLISECONDS*MILLISECOND, clock_handler); //install interrupt service, enabled by the context switch
-	int netInitSuccess = network_initialize(minimsg_network_handler);
+	int netInitSuccess = network_initialize(common_network_handler);
 	minimsg_initialize(); //initialize our minimsg layer
+	minisocket_initialize(); //initialize our minisocket layer
 
 	stack_pointer_t* kernelThreadStackPtr = malloc(sizeof(stack_pointer_t*)); //stack pointer to our kernel thread
 	AbortOnCondition(netInitSuccess == -1 || kernelThreadStackPtr == NULL, "Failed in minithread_system_initialize()"); // check for errors and abort if error is found
