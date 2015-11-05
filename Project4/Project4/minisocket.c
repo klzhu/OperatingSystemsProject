@@ -202,8 +202,8 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		return NULL;
 	}
 
-	c_minisocket->incoming_data = queue_new();
-	if (c_minisocket->incoming_data == NULL) //error creating our queue
+	c_minisocket->retrySema = semaphore_create();
+	if (c_minisocket->retrySema == NULL) //error creating our data ready sema
 	{
 		semaphore_destroy(c_minisocket->data_ready); //free newly allocated space for data ready sema
 		free(c_minisocket); //free newly allocated space for miniport
@@ -211,7 +211,18 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		return NULL;
 	}
 
+	c_minisocket->incoming_data = queue_new();
+	if (c_minisocket->incoming_data == NULL) //error creating our queue
+	{
+		semaphore_destroy(c_minisocket->data_ready); //free newly allocated space for data ready sema
+		semaphore_destroy(c_minisocket->retrySema); //free newly allocated space for data ready sema
+		free(c_minisocket); //free newly allocated space for miniport
+		*error = SOCKET_OUTOFMEMORY;
+		return NULL;
+	}
+
 	semaphore_initialize(c_minisocket->data_ready, 0); //initialize our data ready sema
+	semaphore_initialize(c_minisocket->retrySema, 0); //initialize our transmission retry sema
 
 	if (g_clientPortCounter > CLIENT_PORT_END) //if we've reached the end of our port space, we need to search for an available port number
 	{
@@ -238,32 +249,20 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		g_clientPortCounter++; //increment counter
 	}
 
-	/*
 	//establish handshake
-	while (c_minisocket->status != CONNECTED)
+	while (c_minisocket->status != CONNECTED || *error != SOCKET_BUSY || *error != SOCKET_NOSERVER) //while we're not connected and haven't received a busy or no server error
 	{
-		int sendSuccess = minisocket_send_control_msg(c_minisocket, MSG_SYN);
-		if (sendSuccess == -1) {
+		int sentBytes = minisocket_send_internal(c_minisocket, NULL, 0, error, MSG_SYN);
+		if (sentBytes == -1) { //did not establish a connection
 			semaphore_destroy(c_minisocket->data_ready); //free newly allocated space for data ready sema
-			queue_free(c_minisocket->incoming_data);
-			free(c_minisocket);	// free the newly created client socket
-			*error = SOCKET_SENDERROR;
+			semaphore_destroy(c_minisocket->retrySema); //free newly allocated space for data ready sema
+			queue_free_nodes_and_queue(c_minisocket->incoming_data);
+			free(c_minisocket); //free newly allocated space for miniport
 			return NULL;
 		}
-		semaphore_P(c_minisocket->data_ready); //wait until we receive a SYNACK
-		network_interrupt_arg_t* dequeuedPacket = NULL;
-		int dequeueSuccess = queue_dequeue(c_minisocket->incoming_data, (void**)&dequeuedPacket);
-		if (dequeueSuccess == -1)
-		{
-			semaphore_destroy(c_minisocket->data_ready); //free newly allocated space for data ready sema
-			int dequeueSuccess = queue_free_nodes_and_queue(c_minisocket->incoming_data); //error check needed here?
-			free(c_minisocket); //free our newly created minisocket
-			*error = SOCKET_RECEIVEERROR;
-			return NULL;
-		}
-		c_minisocket->status = CONNECTED;
+		else c_minisocket->status = CONNECTED;
 	}
-	*/
+
 	*error = SOCKET_NOERROR;
 	return c_minisocket;
 }
@@ -329,7 +328,11 @@ int minisocket_send_internal(minisocket_t *socket, const char *msg, int len, min
 				free(dequeuedPacket);
 				break;
 			}
-			
+			else if (socket->status != CLOSING && receivedHeaderPtr->message_type == MSG_FIN) { //tried connecting to a server that is already in use 
+				free(dequeuedPacket);
+				*error = SOCKET_BUSY;
+				return -1;
+			}
 			free(dequeuedPacket); //if none of our above cases, free our packet and check the while loop constraints
 		}
 	}
