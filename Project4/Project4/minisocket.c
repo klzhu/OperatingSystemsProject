@@ -390,6 +390,9 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 
 int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_error *error)
 {
+	int recievedBytes = 0;
+	char* msgBuffer;
+
 	//validate inputs
 	if (socket == NULL || msg == NULL || max_len < 0 || error == NULL || socket->status != CONNECTED || socket->status != RECEIVING || socket->status != SENDING)
 	{
@@ -407,7 +410,21 @@ int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_
 	//once a packet arrives and we wake up
 	network_interrupt_arg_t* dequeuedPacket = NULL;
 
-    return -1;
+	//check if we've gotten all bytes and that there is more to get
+	while (recievedBytes < max_len && queue_dequeue(socket->incoming_data, &dequeuedPacket) > 0)
+	{
+		int i = 0;
+		msgBuffer = dequeuedPacket->buffer;
+		//check if we're done or if we find the end of a packet
+		while (recievedBytes < max_len && i + 21 < MAX_NETWORK_PKT_SIZE)
+		{
+			msg[21 + i] = (dequeuedPacket->buffer)[21 + i]; //first 20 bytes are the header, want the actual data
+			recievedBytes++;
+			i++;
+		}
+	}
+	free(dequeuedPacket);
+    return recievedBytes;
 }
 
 void minisocket_close(minisocket_t *socket)
