@@ -411,7 +411,7 @@ int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_
 	network_interrupt_arg_t* dequeuedPacket = NULL;
 
 	//check if we've gotten all bytes and that there is more to get
-	while (recievedBytes < max_len && queue_dequeue(socket->incoming_data, &dequeuedPacket) > 0)
+	while (recievedBytes < max_len && queue_dequeue(socket->incoming_data, dequeuedPacket) > 0)
 	{
 		int i = 0;
 		msgBuffer = dequeuedPacket->buffer;
@@ -420,7 +420,7 @@ int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_
 		{
 			msg[21 + i] = (dequeuedPacket->buffer)[21 + i]; //first 20 bytes are the header, want the actual data
 			recievedBytes++;
-			i++;
+			i++; //next byte of message
 		}
 	}
 	free(dequeuedPacket);
