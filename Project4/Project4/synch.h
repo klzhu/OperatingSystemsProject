@@ -6,6 +6,8 @@
 #ifndef __SYNCH_H__
 #define __SYNCH_H__
 
+#include <stdbool.h>
+
 typedef struct semaphore semaphore_t;
 
 /*

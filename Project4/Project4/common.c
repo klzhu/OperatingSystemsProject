@@ -27,7 +27,7 @@ void common_network_handler(network_interrupt_arg_t* arg)
 		return;
 	}
 
-	mini_header_t *receivedHeaderPtr = arg->buffer;
+	mini_header_t *receivedHeaderPtr = (mini_header_t*)arg->buffer;
 	switch (receivedHeaderPtr->protocol) {
 	case PROTOCOL_MINIDATAGRAM: //UDP
 		if (arg->size - sizeof(mini_header_t) > MINIMSG_MAX_MSG_SIZE) //discard the packet

@@ -28,6 +28,7 @@ LFLAGS = -lrt -pthread -g
 
 OBJ =                              \
     minithread.o                   \
+    common.o                       \
     interrupts.o                   \
     machineprimitives.o            \
     machineprimitives_x86_64.o     \
