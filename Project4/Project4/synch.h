@@ -43,5 +43,12 @@ void semaphore_P(semaphore_t *sem);
  */
 void semaphore_V(semaphore_t *sem);
 
+/*
+* semaphore_V(semaphore_t sem)
+*  It checks if there is any thread set to sleep by the sempahore sema.
+*	It returns true if there is, or false if there is not
+*/
+bool semaphore_has_sleep_thread(semaphore_t* sem);
+
 
 #endif /*__SYNCH_H__*/

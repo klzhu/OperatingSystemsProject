@@ -41,9 +41,8 @@ semaphore_t* semaphore_create() {
 }
 
 void semaphore_destroy(semaphore_t *sem) {
-	//Validate input arguments, abort if invalid argument is seen
-	AbortOnCondition(sem == NULL, "Null argument sem in semaphore_destroy()");
-	assert(sem->semaWaitQ != NULL); //sanity check
+	//Validate input arguments, return if sem is already null
+	if (sem == NULL) return;
 
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interruption
 
@@ -113,4 +112,10 @@ void semaphore_V(semaphore_t *sem) {
 		minithread_start(t);
 	}
 	set_interrupt_level(old_level); //restore interrupts
+}
+
+bool semaphore_has_sleep_thread(semaphore_t* sem)
+{
+	AbortOnCondition(sem == NULL, "Null argument sem in semaphore_has_sleep_thread()"); // validate argument
+	return queue_length(sem->semaWaitQ) > 0;
 }

@@ -9,13 +9,13 @@
 #include "common.h"
 #include "network.h"
 #include "miniheader.h"
+#include "minimsg.h"
 
  // Forward declaration of functions defined elsewhere
 void minimsg_network_handler(network_interrupt_arg_t* arg);
 void minisocket_network_handler(network_interrupt_arg_t* arg);
 
-void
-common_network_handler(network_interrupt_arg_t* arg)
+void common_network_handler(network_interrupt_arg_t* arg)
 {
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt
 
@@ -27,30 +27,23 @@ common_network_handler(network_interrupt_arg_t* arg)
 		return;
 	}
 
-	//Get header and destination port
 	mini_header_t *receivedHeaderPtr = arg->buffer;
-	//if the protocol is not supported, drop the packet
-	if (receivedHeaderPtr->protocol != PROTOCOL_MINIDATAGRAM || receivedHeaderPtr->protocol != PROTOCOL_MINISTREAM)
-	{
-		free(arg);
-		set_interrupt_level(old_level); //restore interrupt level
-		return;
-	}
-
-	//check if it is a UDP or TCP packet
-	if (receivedHeaderPtr->protocol == PROTOCOL_MINIDATAGRAM) //if UDP packet
-	{
-		minimsg_network_handler(arg);
-	}
-	else //if TCP packet
-	{
-		if (arg->size < sizeof(mini_header_reliable_t)) //if size is less than TCP header, invalid packet
-		{
+	switch (receivedHeaderPtr->protocol) {
+	case PROTOCOL_MINIDATAGRAM: //UDP
+		if (arg->size - sizeof(mini_header_t) > MINIMSG_MAX_MSG_SIZE) //discard the packet
 			free(arg);
-			set_interrupt_level(old_level); //restore interrupt level
-			return;
-		}
-		else minisocket_network_handler(arg);
+		else
+			minimsg_network_handler(arg);
+		break;
+	case PROTOCOL_MINISTREAM:	//TCP
+		if (arg->size < sizeof(mini_header_reliable_t) || arg->size > MAX_NETWORK_PKT_SIZE) //discard the packet
+			free(arg);
+		else
+			minisocket_network_handler(arg);
+		break;
+	default: // discard unknown packet
+		free(arg);
+		break;
 	}
 
 	set_interrupt_level(old_level); //restore interrupt level
