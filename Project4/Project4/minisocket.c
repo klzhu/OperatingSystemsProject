@@ -380,6 +380,7 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 			}
 
 			sentBytes += currSendBytes;
+			len -= currSendBytes;
 		}
 	}
 	
