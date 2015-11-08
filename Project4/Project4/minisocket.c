@@ -352,8 +352,15 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 		return 0;
 	}
 
-	int sentBytes = 0;
 	semaphore_P(socket->canSend); // allow only one send
+
+	// check if the socket is still connected
+	if (socket->state != CONNECTED) {
+		*error = SOCKET_SENDERROR;
+		return -1;
+	}
+	
+	int sentBytes = 0;
 	if (len <= MAXSOCKET_MAX_MSG_SIZE) { // can send in one packet
 		socket->waitStatus = WAIT_ACK;
 		sentBytes = minisocket_send_a_packet(socket, &socket->header, msg, len, GOT_ACK, error);
@@ -399,11 +406,15 @@ int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_
 			socket->leftOverPacket = NULL;
 			socket->usedPacketBytes = 0;
 		}
-	} else {
+	} else { // read from socket's queue incomingDataPackets
 		assert(socket->usedPacketBytes == 0);
-
-		// read from socket's queue incomingDataPackets
 		semaphore_P(socket->packetIsReady); //P semaphore to wait for receiving data packet
+
+		// check if the socket is still connected
+		if (socket->state != CONNECTED) {
+			*error = SOCKET_RECEIVEERROR;
+			return -1;
+		}
 
 		//once a packet arrives and we wake up
 		interrupt_level_t old_level = set_interrupt_level(DISABLED); // critical session (to dequeue the packet queue)
@@ -433,7 +444,8 @@ void minisocket_close(minisocket_t *socket)
 {
 	if (socket == NULL) return;
 
-	assert(socket->state == CONNECTED);
+	//printf("this is the thread's status %d", socket->state);
+	//assert(socket->state == CONNECTED);
 	socket->state = CLOSING;
 
 	// send MSG_FIN packet
