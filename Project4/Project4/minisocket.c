@@ -146,6 +146,7 @@ int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t*
 	while (socket->numAlarmFired < TRANSMISSION_TRIES) {
 		alarm_id retryAlarm;
 		int sentBytes = 0;
+		printf("socket is trying to send a message %d ", unpack_unsigned_short(socket->header.source_port));
 		if (numSendTries == socket->numAlarmFired) { // need to another try of sending
 			sentBytes = network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)header, len, msg);
 			if (sentBytes == -1) { //failed to send error
@@ -193,6 +194,7 @@ void minisocket_initialize()
 
 minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 {
+	printf("created server socket port num %d\n", port);
 	//validate inputs
 	if (port < SERVER_PORT_START || port > SERVER_PORT_END || error == NULL)
 	{
@@ -252,6 +254,7 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 			socket->header.message_type = MSG_ACK;
 			assert(socket->seqNumber == 1 && socket->ackNumber == 1);
 			*error = SOCKET_NOERROR;
+			printf("server port has been created");
 			return socket;
 		}
 
@@ -339,6 +342,8 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		if (sentBytes != -1) { // send MSG_ACK successfully
 			socket->state = CONNECTED;
 			*error = SOCKET_NOERROR;
+			printf("created client socket port num %d\n", localPort);
+			printf("client port has been connected!\n");
 			return socket;
 		}
 	}
