@@ -38,8 +38,8 @@ typedef enum {WAIT_SYN, WAIT_SYNACK, WAIT_ACK, WAIT_FIN, WAIT_NONE,
 			   GOT_SYN,  GOT_SYNACK,  GOT_ACK,  GOT_FIN} wait_state; 
 
 // socket's connection states.
-// socket initializes MSG_FIN is set to CLOSING, and the party received MSG_FIN to close is set to CLOSED
-typedef enum {UNCONNECTED, CONNECTED, CLOSING, CLOSED} socket_state; 
+// CLOSING_ACTIVE is for the party which starts closing process, and CLOSING_PASSIVE is the party to respond closing
+typedef enum {UNCONNECTED, CONNECTED, CLOSING_ACTIVE, CLOSING_PASSIVE, CLOSED} socket_state; 
 
 struct minisocket
 {
@@ -59,6 +59,8 @@ struct minisocket
 	semaphore_t *packetIsReady; // waiting for received data
 	queue_t *incomingDataPackets;
 
+	semaphore_t *closingAlarmSema; // waiting for closing-socket alarm
+
 	network_interrupt_arg_t* leftOverPacket; // a packet that is partially received
 	int usedPacketBytes; // number of bytes used in the leftOverPacket packet
 };
@@ -70,11 +72,12 @@ void free_socket(minisocket_t* socket)
 	semaphore_destroy(socket->waitSema);
 	semaphore_destroy(socket->canSend);
 	semaphore_destroy(socket->packetIsReady);
+	semaphore_destroy(socket->closingAlarmSema);
 	queue_free_nodes_and_queue(socket->incomingDataPackets);
 	free(socket);
 }
 
-// it wakes up all threads put into sleep by socket's sema
+// it wakes up all threads put into sleep by socket's sema except closingAlarmSema's
 void wakeup_all(minisocket_t* socket)
 {
 	while (semaphore_has_sleep_thread(socket->waitSema)) semaphore_V(socket->waitSema);
@@ -90,8 +93,10 @@ int init_socket_common_part(minisocket_t* socket, minisocket_error *error)
 	socket->waitSema = semaphore_create();
 	socket->canSend = semaphore_create();
 	socket->packetIsReady = semaphore_create();
+	socket->closingAlarmSema = semaphore_create();
 	socket->incomingDataPackets = queue_new();
-	if (socket->waitSema == NULL || socket->canSend == NULL || socket->packetIsReady == NULL || socket->incomingDataPackets == NULL) {
+	if (socket->waitSema == NULL || socket->canSend == NULL || socket->packetIsReady == NULL 
+		|| socket->incomingDataPackets == NULL || socket->closingAlarmSema == NULL) {
 		*error = SOCKET_OUTOFMEMORY;
 		return -1;
 	}
@@ -99,6 +104,7 @@ int init_socket_common_part(minisocket_t* socket, minisocket_error *error)
 	semaphore_initialize(socket->waitSema, 0); //initialize our data ready sema
 	semaphore_initialize(socket->canSend, 1);
 	semaphore_initialize(socket->packetIsReady, 0);
+	semaphore_initialize(socket->closingAlarmSema, 0);
 
 	socket->header.protocol = PROTOCOL_MINISTREAM;
 	network_address_t my_address;
@@ -124,15 +130,9 @@ void minisocket_send_alarm_handler(void* arg)
 
 void minisocket_close_alarm_handler(void* arg)
 {
-	/*
 	minisocket_t *socket = (minisocket_t*)arg;
-	int sourcePort = unpack_unsigned_short(socket->header.source_port);
-	semaphore_P(g_semaSocketArrayLock); //critical section to prevent others to modify global g_socketPortPtrs
-	g_socketPortPtrs[sourcePort] = NULL;
-	semaphore_V(g_semaSocketArrayLock);	//end of critical session
-
-	wakeup_all(socket);
-	free_socket(socket);*/
+	socket->state = CLOSED;
+	semaphore_V(socket->closingAlarmSema); // wake up any thread waiting for firing this alarm
 }
 
 // It sends a packet reliably (by trying to send TRANSMISSION_TRIES times for ack).
@@ -160,7 +160,7 @@ int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t*
 		
 		semaphore_P(socket->waitSema); //wait for ACK message
 		// Check what happened
-		if (socket->state == CLOSING || socket->state == CLOSED) { // socket is closed
+		if (socket->state == CLOSING_ACTIVE || socket->state == CLOSING_PASSIVE || socket->state == CLOSED) { // socket is closed
 			break;
 		} else if (socket->waitStatus == whatToWait && socket->receivedAckNumber == socket->waitAckNumber) { // expected ACK is recevied
 			if (numSendTries > socket->numAlarmFired) // if alarm has not set off, dereg it
@@ -445,16 +445,20 @@ void minisocket_close(minisocket_t *socket)
 {
 	if (socket == NULL) return;
 
-	//printf("this is the thread's status %d", socket->state);
-	//assert(socket->state == CONNECTED);
-	socket->state = CLOSING;
+	if (socket->state == CONNECTED) {
+		socket->state = CLOSING_ACTIVE;
 
-	// send MSG_FIN packet
-	socket->header.message_type = MSG_FIN;
-	socket->waitStatus = WAIT_FIN;
-	socket->waitAckNumber = socket->seqNumber + 1; // the responding packet will increase ack_num by 1
-	minisocket_error error;
-	minisocket_send_a_packet(socket, &socket->header, NULL, 0, GOT_FIN, &error);
+		// send MSG_FIN packet
+		socket->header.message_type = MSG_FIN;
+		socket->waitStatus = WAIT_FIN;
+		socket->waitAckNumber = socket->seqNumber + 1; // the responding packet will increase ack_num by 1
+		minisocket_error error;
+		minisocket_send_a_packet(socket, &socket->header, NULL, 0, GOT_FIN, &error);
+		socket->state = CLOSED;
+	} else if (socket->state == CLOSING_PASSIVE) { // alarm has not fired yet, wait for alarm to fire
+		semaphore_P(socket->waitSema);
+		assert(socket->state == CLOSED);
+	}
 
 	// close the socket even when the above sending has no response
 	int sourcePort = unpack_unsigned_short(socket->header.source_port);
@@ -512,7 +516,7 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 	}
 
 	// ignore packet if the socket is closed or closing but message is not MSG_FIN
-	if ((socket->state == CLOSED || socket->state == CLOSING) && receivedHeaderPtr->message_type != MSG_FIN) {
+	if ((socket->state == CLOSING_PASSIVE || socket->state == CLOSING_ACTIVE) && receivedHeaderPtr->message_type != MSG_FIN) {
 		free(arg);
 		return;
 	}
@@ -578,15 +582,15 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 		break;
 
 	case MSG_FIN: // no data
-		if (socket->state == CLOSING) { // this socket initializes MSG_FIN 
+		if (socket->state == CLOSING_ACTIVE) { // this party's socket starts closing process
 			if (socket->waitStatus == WAIT_FIN && socket->waitAckNumber == receivedAckNum) {
 				socket->waitStatus = GOT_FIN;
 				socket->receivedAckNumber = receivedAckNum;
 				semaphore_V(socket->waitSema);
 			}
-		} else { // receives MSG_FIN from the remote party
-			if (socket->state != CLOSED) {
-				socket->state = CLOSED;
+		} else { // this party's socket responds to closing request by the remote party
+			if (socket->state != CONNECTED) {
+				socket->state = CLOSING_PASSIVE;
 				socket->header.message_type = MSG_FIN;
 				socket->ackNumber++; // ack_num is increased by 1 to respond a MSG_FIN packet with another MSG_FIN packet
 				pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
@@ -594,7 +598,8 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 				register_alarm(FIN_WAIT_TIME, minisocket_close_alarm_handler, socket);
 			}
 
-			network_send_pkt(remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
+			if (socket->state == CLOSING_PASSIVE)
+				network_send_pkt(remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
 		}
 
 		free(arg);
