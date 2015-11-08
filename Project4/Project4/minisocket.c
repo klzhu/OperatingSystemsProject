@@ -23,7 +23,7 @@
 #define PORT_START				0		/* The beginning port number */
 #define PORT_END				65535	/* The end port number */
 #define TRANSMISSION_TRIES		7		/* Number of times we try to establish a connection */
-const int MAXSOCKET_MAX_MSG_SIZE = MAX_NETWORK_PKT_SIZE - sizeof(mini_header_reliable_t);
+#define MAXSOCKET_MAX_MSG_SIZE	(MAX_NETWORK_PKT_SIZE - 32) /*maximum data size of a packet. Must be <= MAX_NETWORK_PKT_SIZE - NETWORK_HDR_SIZE */
 const int TRANSMISSION_RETRY_DELAYS[] = { 100, 200, 400, 800, 1600, 3200, 6400 }; //transmission timeouts in ms for each try
 const int FIN_WAIT_TIME = 15000; // waiting time in ms of a socket after responding MSG_ACK
 
@@ -58,6 +58,9 @@ struct minisocket
 	semaphore_t *canSend;	// for minisocket_send(): only one send can use a socket at a time
 	semaphore_t *packetIsReady; // waiting for received data
 	queue_t *incomingDataPackets;
+
+	network_interrupt_arg_t* leftOverPacket; // a packet that is partially received
+	int usedPacketBytes; // number of bytes used in the leftOverPacket packet
 };
 
 // ---- Internal Functions ---- //
@@ -77,6 +80,37 @@ void wakeup_all(minisocket_t* socket)
 	while (semaphore_has_sleep_thread(socket->waitSema)) semaphore_V(socket->waitSema);
 	while (semaphore_has_sleep_thread(socket->canSend)) semaphore_V(socket->canSend);
 	while (semaphore_has_sleep_thread(socket->packetIsReady)) semaphore_V(socket->packetIsReady);
+}
+
+// it initializes common variables of a socket (in creating a client and server socket).
+// It returns 0 if successful or -1 if error.
+int init_socket_common_part(minisocket_t* socket, minisocket_error *error)
+{
+	//create semaphores and queue
+	socket->waitSema = semaphore_create();
+	socket->canSend = semaphore_create();
+	socket->packetIsReady = semaphore_create();
+	socket->incomingDataPackets = queue_new();
+	if (socket->waitSema == NULL || socket->canSend == NULL || socket->packetIsReady == NULL || socket->incomingDataPackets == NULL) {
+		*error = SOCKET_OUTOFMEMORY;
+		return -1;
+	}
+
+	semaphore_initialize(socket->waitSema, 0); //initialize our data ready sema
+	semaphore_initialize(socket->canSend, 1);
+	semaphore_initialize(socket->packetIsReady, 0);
+
+	socket->header.protocol = PROTOCOL_MINISTREAM;
+	network_address_t my_address;
+	network_get_my_address(my_address);
+	pack_address(socket->header.source_address, my_address);
+
+	socket->state = UNCONNECTED;
+
+	socket->leftOverPacket = NULL;
+	socket->usedPacketBytes = 0;
+
+	return 0;
 }
 
 void minisocket_send_alarm_handler(void* arg)
@@ -146,7 +180,9 @@ int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t*
 // ---- API Functions ---- //
 void minisocket_initialize()
 {
-	assert(sizeof(TRANSMISSION_RETRY_DELAYS) / sizeof(int) == TRANSMISSION_TRIES); // sanity check
+	// sanity checking
+	assert(sizeof(TRANSMISSION_RETRY_DELAYS) / sizeof(int) == TRANSMISSION_TRIES); 
+	assert(MAXSOCKET_MAX_MSG_SIZE < MAX_NETWORK_PKT_SIZE - sizeof(mini_header_reliable_t)); 
 
 	g_clientPortCounter = CLIENT_PORT_START; 
 	memset(g_socketPortPtrs, 0, sizeof(g_socketPortPtrs)); //set array of port pointers to null
@@ -176,31 +212,16 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 		return NULL;
 	}
 
-	//create semaphores and queue
-	socket->waitSema = semaphore_create();
-	socket->canSend = semaphore_create();
-	socket->packetIsReady = semaphore_create();
-	socket->incomingDataPackets = queue_new();
-	if (socket->waitSema == NULL || socket->canSend == NULL || socket->packetIsReady == NULL || socket->incomingDataPackets == NULL) {
+	if (init_socket_common_part(socket, error) == -1) {
 		free_socket(socket);
-		*error = SOCKET_OUTOFMEMORY;
 		return NULL;
 	}
 
-	semaphore_initialize(socket->waitSema, 0); //initialize our data ready sema
-	semaphore_initialize(socket->canSend, 1);
-	semaphore_initialize(socket->packetIsReady, 0);
-
-	socket->header.protocol = PROTOCOL_MINISTREAM;
-	network_address_t my_address;
-	network_get_my_address(my_address);
-	pack_address(socket->header.source_address, my_address);
 	pack_unsigned_short(socket->header.source_port, (unsigned short)port);
 
 	socket->seqNumber = 0;
 	socket->ackNumber = 1;	// MSG_SYNACK packet's ack_num is 1
 
-	socket->state = UNCONNECTED;
 	socket->waitStatus = WAIT_SYN;
 	socket->waitAckNumber = 0;
 
@@ -214,11 +235,11 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 	g_socketPortPtrs[port] = socket;	//update our array of pointers for our unbounded ports
 	semaphore_V(g_semaSocketArrayLock);	//end of critical session
 
+	//establish handshake
 	// assign header's partial field for sending MSG_SYNACK packet
 	socket->header.message_type = MSG_SYNACK;
 	pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
 	pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
-	//establish handshake
 	while (true) {
 		semaphore_P(socket->waitSema); //wait for SYN message
 
@@ -228,7 +249,7 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 		int sentBytes = minisocket_send_a_packet(socket, &socket->header, NULL, 0, GOT_ACK, error);
 		if (sentBytes != -1) { // if sent successfully
 			socket->state = CONNECTED;
-			socket->seqNumber++;
+			socket->header.message_type = MSG_ACK;
 			assert(socket->seqNumber == 1 && socket->ackNumber == 1);
 			*error = SOCKET_NOERROR;
 			return socket;
@@ -261,33 +282,18 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 		return NULL;
 	}
 
-	//create semaphores and queue
-	socket->waitSema = semaphore_create();
-	socket->canSend = semaphore_create();
-	socket->packetIsReady = semaphore_create();
-	socket->incomingDataPackets = queue_new();
-	if (socket->waitSema == NULL || socket->canSend == NULL || socket->packetIsReady == NULL || socket->incomingDataPackets == NULL) {
+	if (init_socket_common_part(socket, error) == -1) {
 		free_socket(socket);
-		*error = SOCKET_OUTOFMEMORY;
 		return NULL;
 	}
 
-	semaphore_initialize(socket->waitSema, 0); //initialize our data ready sema
-	semaphore_initialize(socket->canSend, 1);
-	semaphore_initialize(socket->packetIsReady, 0);
-
 	network_address_copy(addr, socket->remoteAddr);
-	socket->header.protocol = PROTOCOL_MINISTREAM;
 	pack_address(socket->header.destination_address, addr);
 	pack_unsigned_short(socket->header.destination_port, (unsigned short)port);
-	network_address_t my_address;
-	network_get_my_address(my_address);
-	pack_address(socket->header.source_address, my_address);
 
 	socket->seqNumber = 0;
 	socket->ackNumber = 0;	// MSG_SYN packet's ack_num is 0
 
-	socket->state = UNCONNECTED;
 	socket->waitStatus = WAIT_NONE;
 	socket->waitAckNumber = 0;
 
@@ -354,12 +360,11 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 	if (socket == NULL || error == NULL || len < 0 || (msg == NULL && len != 0)) {
 		*error = SOCKET_INVALIDPARAMS;
 		return -1;
-	} else if (len == 0) {
+	} else if (len == 0 || socket->state != CONNECTED) {
 		*error = SOCKET_NOERROR;
 		return 0;
 	}
 
-	assert(socket->state != UNCONNECTED); // sanity checking
 	int sentBytes = 0;
 	semaphore_P(socket->canSend); // allow only one send
 	if (len <= MAXSOCKET_MAX_MSG_SIZE) { // can send in one packet
@@ -384,42 +389,56 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 
 int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_error *error)
 {
-	/*
 	//validate inputs
 	if (socket == NULL || error == NULL || max_len < 0 || (msg == NULL && max_len != 0)) {
 		*error = SOCKET_INVALIDPARAMS;
 		return -1;
-	} else if (max_len == 0) {
+	} else if (max_len == 0 || socket->state != CONNECTED) {
 		*error = SOCKET_NOERROR;
 		return 0;
 	}
 
 	assert(socket->packetIsReady != NULL && socket->incomingDataPackets != NULL);
-
-	semaphore_P(socket->packetIsReady); //P semaphore, if count is 0 we're blocked until packet arrives
-
-	//once a packet arrives and we wake up
-	network_interrupt_arg_t* dequeuedPacket = NULL;
-	//logic to get the correct packet
-
-	//logic to return the packet. first, check if we have enough room for the packet
-	if (dequeuedPacket->size > max_len) //size of packet bigger than what our thread can fit, so take out what we can and prepend the rest
-	{
-		memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_reliable_t), max_len);
-		memcpy(dequeuedPacket->buffer + sizeof(mini_header_reliable_t), dequeuedPacket->buffer + sizeof(mini_header_reliable_t) + max_len, dequeuedPacket->size - sizeof(mini_header_reliable_t) - max_len);
-		dequeuedPacket->size -= max_len;
-		int prependSuccess = queue_prepend(socket->incomingDataPackets, dequeuedPacket); //add back the data in the packet we could not fit
-		if (prependSuccess == -1) {
-			*error = SOCKET_RECEIVEERROR;
-			return -1;
+	int receivedBytes = 0;
+	if (socket->leftOverPacket != NULL) { // there is data left from last receive, read it and return
+		receivedBytes = socket->leftOverPacket->size - socket->usedPacketBytes;
+		assert(receivedBytes > 0);
+		if (receivedBytes > max_len) receivedBytes = max_len;
+		memcpy(msg, socket->leftOverPacket->buffer + socket->usedPacketBytes, receivedBytes);
+		socket->usedPacketBytes += receivedBytes;
+		if (socket->leftOverPacket->size == socket->usedPacketBytes) { // if all bytes in the buffer are received
+			free(socket->leftOverPacket); // release the packet
+			socket->leftOverPacket = NULL;
+			socket->usedPacketBytes = 0;
 		}
 	} else {
-		memcpy(msg, dequeuedPacket->buffer + sizeof(mini_header_reliable_t), max_len); // msg is after header
-		free(dequeuedPacket);
+		assert(socket->usedPacketBytes == 0);
+
+		// read from socket's queue incomingDataPackets
+		semaphore_P(socket->packetIsReady); //P semaphore to wait for receiving data packet
+
+		//once a packet arrives and we wake up
+		interrupt_level_t old_level = set_interrupt_level(DISABLED); // critical session (to dequeue the packet queue)
+		int dequeueSuccess = queue_dequeue(socket->incomingDataPackets, (void**)&socket->leftOverPacket);
+		set_interrupt_level(old_level); //end of critical session to restore interrupt level
+		AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minisocket_receive()");
+
+		int totalUsedBytes = sizeof(mini_header_reliable_t);
+		int dataBytes = socket->leftOverPacket->size - totalUsedBytes;
+		assert(dataBytes > 0); // if no data, the packet should not be enqueued
+		receivedBytes = (dataBytes > max_len) ? max_len : dataBytes;
+		memcpy(msg, socket->leftOverPacket->buffer + totalUsedBytes, receivedBytes);
+		totalUsedBytes += receivedBytes;
+
+		if (socket->leftOverPacket->size > totalUsedBytes) { // if there are some bytes left
+			socket->usedPacketBytes = totalUsedBytes;
+		} else { // the packet is fully received
+			free(socket->leftOverPacket); // release the packet
+			socket->leftOverPacket = NULL;
+		}
 	}
 
-	return sizeof(msg) - sizeof(mini_header_reliable_t); //return the num bytes we received exclusive of the header*/
-	return -1;
+	return receivedBytes;
 }
 
 void minisocket_close(minisocket_t *socket)
@@ -482,10 +501,10 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 	//check if remote addr+port agrees with socket's if socket has remote's info
 	if (socket->waitStatus != WAIT_SYN) {
 		assert(sizeof(int64_t) == 8 && sizeof(short) == 2);
-		int64_t *recAddr_int = (int64_t*)receivedHeaderPtr->source_address;
-		short *recPort_int = (short*)receivedHeaderPtr->source_port;
-		int64_t *socketAddr_int = (int64_t*)socket->header.destination_address;
-		short *socketPort_int = (short*)socket->header.destination_port;
+		int64_t* recAddr_int = (int64_t*)receivedHeaderPtr->source_address;
+		short* recPort_int = (short*)receivedHeaderPtr->source_port;
+		int64_t* socketAddr_int = (int64_t*)socket->header.destination_address;
+		short* socketPort_int = (short*)socket->header.destination_port;
 		if (*recAddr_int != *socketAddr_int || *recPort_int != *socketPort_int) { // if packet from a different addr+port, discard it
 			free(arg);
 			return;
@@ -498,8 +517,8 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 		return;
 	}
 
-	bool matchWait = false;
 	// packet matches socket's addr+port or MSG_SYN packet socket is waiting for
+	bool matchWait = false;
 	switch (receivedHeaderPtr->message_type) {
 	case MSG_SYN:
 		if (socket->waitStatus == WAIT_SYN && socket->waitAckNumber == receivedAckNum && dataBytes == 0) { // expected packet is received

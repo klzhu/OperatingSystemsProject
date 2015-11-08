@@ -10,6 +10,7 @@
 #include "network.h"
 #include "miniheader.h"
 #include "minimsg.h"
+#include "minisocket.h"
 
  // Forward declaration of functions defined elsewhere
 void minimsg_network_handler(network_interrupt_arg_t* arg);
@@ -27,7 +28,7 @@ void common_network_handler(network_interrupt_arg_t* arg)
 		return;
 	}
 
-	mini_header_t *receivedHeaderPtr = (mini_header_t*)arg->buffer;
+	mini_header_t *receivedHeaderPtr = (mini_header_t *)arg->buffer;
 	switch (receivedHeaderPtr->protocol) {
 	case PROTOCOL_MINIDATAGRAM: //UDP
 		if (arg->size - sizeof(mini_header_t) > MINIMSG_MAX_MSG_SIZE) //discard the packet
