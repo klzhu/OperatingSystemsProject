@@ -146,7 +146,6 @@ int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t*
 	while (socket->numAlarmFired < TRANSMISSION_TRIES) {
 		alarm_id retryAlarm;
 		int sentBytes = 0;
-		printf("socket is trying to send a message %d ", unpack_unsigned_short(socket->header.source_port));
 		if (numSendTries == socket->numAlarmFired) { // need to another try of sending
 			sentBytes = network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)header, len, msg);
 			if (sentBytes == -1) { //failed to send error
@@ -159,7 +158,6 @@ int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t*
 		}
 		
 		semaphore_P(socket->waitSema); //wait for ACK message
-
 		// Check what happened
 		if (socket->state == CLOSING || socket->state == CLOSED) { // socket is closed
 			break;
@@ -194,7 +192,6 @@ void minisocket_initialize()
 
 minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 {
-	printf("created server socket port num %d\n", port);
 	//validate inputs
 	if (port < SERVER_PORT_START || port > SERVER_PORT_END || error == NULL)
 	{
@@ -254,7 +251,6 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 			socket->header.message_type = MSG_ACK;
 			assert(socket->seqNumber == 1 && socket->ackNumber == 1);
 			*error = SOCKET_NOERROR;
-			printf("server port has been created");
 			return socket;
 		}
 
@@ -330,22 +326,8 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 	socket->waitAckNumber = 1;
 	int sentBytes = minisocket_send_a_packet(socket, &socket->header, NULL, 0, GOT_SYNACK, error);
 	if (sentBytes != -1) { // send MSG_ACK successfully
-		// send ACK packet
-		socket->seqNumber++;
-		socket->ackNumber++;
-		assert(socket->seqNumber == 1 && socket->ackNumber == 1);
-		socket->header.message_type = MSG_ACK;
-		pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
-		pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
-
-		sentBytes = network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
-		if (sentBytes != -1) { // send MSG_ACK successfully
-			socket->state = CONNECTED;
-			*error = SOCKET_NOERROR;
-			printf("created client socket port num %d\n", localPort);
-			printf("client port has been connected!\n");
-			return socket;
-		}
+		*error = SOCKET_NOERROR;
+		return socket;
 	}
 
 	// if not returned, it failed in hand shaking, we clean up
@@ -490,7 +472,6 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 
 	network_address_t remoteAddr;
 	unpack_address(receivedHeaderPtr->source_address, remoteAddr);
-
 	if (receivedHeaderPtr->message_type == MSG_SYN && socket->waitStatus != WAIT_SYN) { // send back MSG_FIN message if received packet is MSG_SYN
 		mini_header_reliable_t finHeader;
 		memcpy(&finHeader, &socket->header, sizeof(mini_header_reliable_t));
@@ -540,17 +521,31 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 
 	case MSG_SYNACK: 
 		if (socket->waitStatus == WAIT_SYNACK && socket->waitAckNumber == receivedAckNum && dataBytes == 0) {
+			// send ACK packet to respond
+			socket->seqNumber++;
+			socket->ackNumber++;
+			socket->state = CONNECTED;
+			assert(socket->seqNumber == 1 && socket->ackNumber == 1);
+			socket->header.message_type = MSG_ACK;
+			pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
+			pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
+			network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
+
 			socket->waitStatus = GOT_SYNACK;
 			socket->receivedAckNumber = receivedAckNum;
 			semaphore_V(socket->waitSema);
-		}
+		} 
+
+		if (socket->state == CONNECTED)
+			network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
+
 		free(arg);
 		break;
 
 	case MSG_ACK:
 		if (socket->waitStatus == WAIT_ACK && socket->waitAckNumber == receivedAckNum) {
 			matchWait = true;
-			socket->seqNumber = socket->waitAckNumber; //???XXX???
+			socket->seqNumber = socket->waitAckNumber; 
 			pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
 			socket->waitStatus = GOT_ACK;
 			socket->receivedAckNumber = receivedAckNum;
@@ -591,6 +586,7 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 
 		free(arg);
 		break;
+
 	default:
 		free(arg);
 		break;
