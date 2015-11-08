@@ -124,6 +124,7 @@ void minisocket_send_alarm_handler(void* arg)
 
 void minisocket_close_alarm_handler(void* arg)
 {
+	/*
 	minisocket_t *socket = (minisocket_t*)arg;
 	int sourcePort = unpack_unsigned_short(socket->header.source_port);
 	semaphore_P(g_semaSocketArrayLock); //critical section to prevent others to modify global g_socketPortPtrs
@@ -131,7 +132,7 @@ void minisocket_close_alarm_handler(void* arg)
 	semaphore_V(g_semaSocketArrayLock);	//end of critical session
 
 	wakeup_all(socket);
-	free_socket(socket);
+	free_socket(socket);*/
 }
 
 // It sends a packet reliably (by trying to send TRANSMISSION_TRIES times for ack).
