@@ -11,3 +11,6 @@ We chose to put this in common.c and not common.h because this network handler s
 the common_network_handler is not exposed to outside users in minimsg.h, but is accessible by minithreads.c. 
 Because the network handler has to touch queues and semaphores in the miniport and minisocket struct, I felt it made more sense for the handlers to live
 in their respective .c files so that minithreads.c does not need to know these structs.
+
+Our network handler for minisockets currently handles all the routing of where the packages should go. Had I had time, I would have tried to make a dedicated thread do this 
+or something in order to avoid the complexity needed in the network handler.
