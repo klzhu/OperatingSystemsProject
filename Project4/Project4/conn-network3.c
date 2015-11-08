@@ -1,22 +1,24 @@
 /* 
  *    conn-network test program 3
- *	  10 concurrent connections between two machines exchange big messages.
+ *    10 concurrent connections between two machines exchange big messages.
  *    usage: conn-network3 [<hostname>]
  *    if no hostname is supplied, server will be run
  *    if a hostname is given, the client application will be run
  *    Make experiments with different values for BUFFER_SIZE
 */
 
+#include "assert.h"
 #include "minithread.h"
 #include "minisocket.h"
 #include "synch.h"
 
 const size_t BUFFER_SIZE = 100000;
-const size_t THREAD_COUNTER = 10;
+const size_t THREAD_COUNTER = 25;
 
 // ports on which we do the communication
-int port[] = {80,81,82,83,84,85,86,87,88,89};
-int thread_id[] = {0,1,2,3,4,5,6,7,8,9};
+int port[] = {80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,
+        111,112,113,114,115};
+int thread_id[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35};
 
 char* hostname;
 
@@ -118,6 +120,7 @@ int receiver(int* arg) {
 }
 
 int main(int argc, char** argv) {
+    assert(sizeof(port) / sizeof(int) >= THREAD_COUNTER && sizeof(thread_id) / sizeof(int) >= THREAD_COUNTER);
     if (argc > 1) {
         hostname = argv[1];
         minithread_system_initialize(client, NULL);
