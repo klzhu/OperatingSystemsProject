@@ -50,7 +50,6 @@ struct minisocket
 	socket_state state;		// socket's status 
 	wait_state waitStatus;	// does the socket is wait for a special packet, and what type of packet it is waiting for
 	unsigned int waitAckNumber;	// What is the ack number of the waited packet
-	unsigned int receivedAckNumber; // The received packet's ack_number (so that we can compare it with waitAckNumber)
 	int numAlarmFired;		// # of tries to send a packet (only used by minisocket_send_a_packet() and alarm handler
 
 	semaphore_t *waitSema;	// waiting for handshaking or ACK packet
@@ -131,7 +130,7 @@ void minisocket_close_alarm_handler(void* arg)
 {
 	minisocket_t *socket = (minisocket_t*)arg;
 	socket->state = CLOSED;
-	semaphore_V(socket->closingAlarmSema); // wake up any thread waiting for firing this alarm
+	while (semaphore_has_sleep_thread(socket->closingAlarmSema)) semaphore_V(socket->closingAlarmSema);// wake up any thread waiting for firing this alarm
 }
 
 // It sends a packet reliably (by trying to send TRANSMISSION_TRIES times for ack).
@@ -140,7 +139,6 @@ void minisocket_close_alarm_handler(void* arg)
 int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t* header, const char *msg, int len, wait_state whatToWait, minisocket_error *error)
 {
 	socket->numAlarmFired = 0;
-	socket->receivedAckNumber = 0;
 	socket->waitAckNumber += len;
 	int numSendTries = 0;
 	while (socket->numAlarmFired < TRANSMISSION_TRIES) {
@@ -161,7 +159,7 @@ int minisocket_send_a_packet(minisocket_t *socket, const mini_header_reliable_t*
 		// Check what happened
 		if (socket->state == CLOSING || socket->state == CLOSED) { // socket is closed
 			break;
-		} else if (socket->waitStatus == whatToWait && socket->receivedAckNumber == socket->waitAckNumber) { // expected ACK is recevied
+		} else if (socket->waitStatus == whatToWait && socket->seqNumber == socket->waitAckNumber) { // expected ACK is recevied
 			if (numSendTries > socket->numAlarmFired) // if alarm has not set off, dereg it
 				deregister_alarm(retryAlarm); 
 
@@ -244,11 +242,9 @@ minisocket_t* minisocket_server_create(int port, minisocket_error *error)
 
 		// At this point, SYN is received and remoteAddr and the header's destination address and port should be assigned
 		socket->waitStatus = WAIT_ACK;
-		socket->waitAckNumber = 1;	// ack_num of the first MSG_ACK from client
+		socket->waitAckNumber = socket->seqNumber + 1;	
 		int sentBytes = minisocket_send_a_packet(socket, &socket->header, NULL, 0, GOT_ACK, error);
 		if (sentBytes != -1) { // if sent successfully
-			socket->state = CONNECTED;
-			socket->header.message_type = MSG_ACK;
 			assert(socket->seqNumber == 1 && socket->ackNumber == 1);
 			*error = SOCKET_NOERROR;
 			return socket;
@@ -469,7 +465,6 @@ void minisocket_close(minisocket_t *socket)
 	free_socket(socket);
 }
 
-
 void minisocket_network_handler(network_interrupt_arg_t* arg)
 {
 	//Get header and destination port
@@ -521,12 +516,11 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 	}
 
 	// packet matches socket's addr+port or MSG_SYN packet socket is waiting for
-	bool matchWait = false;
+	bool needFree = true;
 	switch (receivedHeaderPtr->message_type) {
 	case MSG_SYN:
 		if (socket->waitStatus == WAIT_SYN && socket->waitAckNumber == receivedAckNum && dataBytes == 0) { // expected packet is received
 			socket->waitStatus = GOT_SYN;
-			socket->receivedAckNumber = receivedAckNum;
 			unpack_address(receivedHeaderPtr->source_address, socket->remoteAddr);
 			memcpy(socket->header.destination_address, receivedHeaderPtr->source_address, sizeof(receivedHeaderPtr->source_address));
 			memcpy(socket->header.destination_port, receivedHeaderPtr->source_port, sizeof(receivedHeaderPtr->source_port));
@@ -537,18 +531,17 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 
 	case MSG_SYNACK: 
 		if (socket->waitStatus == WAIT_SYNACK && socket->waitAckNumber == receivedAckNum && dataBytes == 0) {
-			// send ACK packet to respond
-			socket->seqNumber++;
-			socket->ackNumber++;
 			socket->state = CONNECTED;
+			socket->seqNumber = receivedAckNum;
+			socket->ackNumber++;
 			assert(socket->seqNumber == 1 && socket->ackNumber == 1);
 			socket->header.message_type = MSG_ACK;
 			pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
 			pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
+			// send ACK packet to respond
 			network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
 
 			socket->waitStatus = GOT_SYNACK;
-			socket->receivedAckNumber = receivedAckNum;
 			semaphore_V(socket->waitSema);
 		} 
 
@@ -560,24 +553,31 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 
 	case MSG_ACK:
 		if (socket->waitStatus == WAIT_ACK && socket->waitAckNumber == receivedAckNum) {
-			matchWait = true;
-			socket->seqNumber = socket->waitAckNumber; 
+			if (socket->state == UNCONNECTED) {
+				socket->state = CONNECTED;
+				socket->header.message_type = MSG_ACK;
+			}
+			socket->seqNumber = receivedAckNum;
 			pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
 			socket->waitStatus = GOT_ACK;
-			socket->receivedAckNumber = receivedAckNum;
 			semaphore_V(socket->waitSema);
 		}
 
-		if (dataBytes > 0 && (socket->state == CONNECTED || (socket->state == UNCONNECTED && matchWait))
-			&& socket->ackNumber == receivedSeqNum) { // right data packet & socket is ready to accept data
-			socket->ackNumber += dataBytes; 
-			pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
-			network_send_pkt(remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
-			queue_append(socket->incomingDataPackets, (void*)arg); // append the data packet
-			semaphore_V(socket->packetIsReady);
-		} else { 
-			free(arg);
-		}
+		// data packet & socket is ready to accept data
+		if (dataBytes > 0 && socket->state == CONNECTED) { 
+			if (socket->ackNumber == receivedSeqNum) {
+				socket->ackNumber += dataBytes;
+				pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
+				queue_append(socket->incomingDataPackets, (void*)arg); // append the data packet
+				semaphore_V(socket->packetIsReady);
+				needFree = false;
+			}
+
+			if (socket->ackNumber == receivedSeqNum + dataBytes) // respond with ACK if it is a matched packet 
+				network_send_pkt(remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
+		} 
+		
+		if (needFree) free(arg);
 		break;
 
 	case MSG_FIN: 
