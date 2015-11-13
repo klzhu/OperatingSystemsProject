@@ -484,7 +484,12 @@ void try_connect(struct file_info *fi){
 
     /* Make the socket, skt, non-blocking.
      */
-    // YOUR CODE HERE
+    int setNonBlockSuccess = fcntl(skt, F_SETFL, 0_NONBLOCK);
+    if (setNonBlockSuccess < 0) //call to socket returned error
+	{
+		fprintf(stderr, "Call to fcntl returned error in main with error code %d\n", errno);
+		return -1;
+	}
 
 	if (connect(skt, (struct sockaddr *) &fi->addr, sizeof(fi->addr)) < 0) {
 		printf("Connecting to %s:%d on socket %d\n", inet_ntoa(fi->addr.sin_addr), ntohs(fi->addr.sin_port), skt);
@@ -534,7 +539,12 @@ static void server_handler(struct file_info *fi, int events){
 
 		/* Make the socket non-blocking.
 		 */
-        // YOUR CODE HERE
+        int setNonBlockSuccess = fcntl(skt, F_SETFL, 0_NONBLOCK);
+	    if (setNonBlockSuccess < 0) //call to socket returned error
+		{
+			fprintf(stderr, "Call to fcntl returned error in main with error code %d\n", errno);
+			return -1;
+		}
 
 		/* Keep track of the socket.
 		 */
@@ -567,20 +577,43 @@ int main(int argc, char *argv[]){
 
 	/* Create a TCP socket.
 	 */
-	int skt;
-    // YOUR CODE HERE
+	int skt = socket(AF_INET, SOCK_STREAM, 0);
+	if (skt < 0) //call to socket returned error
+	{
+		fprintf(stderr, "Call to socket returned error in main with error code %d\n", errno);
+		return -1;
+	}
 
 	/* Make the socket non-blocking.
 	 */
-    // YOUR CODE HERE
+    int setNonBlockSuccess = fcntl(skt, F_SETFL, 0_NONBLOCK);
+    if (setNonBlockSuccess < 0) //call to socket returned error
+	{
+		fprintf(stderr, "Call to fcntl returned error in main with error code %d\n", errno);
+		return -1;
+	}
+
+	int optVal = 0;
+	int setSockOptSuccess = setsockopt(skt, SOL_SOCKET, SO_REUSEADDR, &optVal, sizeof(int));
+	if (setSockOptSuccess < 0) //call to socket returned error
+	{
+		fprintf(stderr, "Call to setsockopt returned error in main with error code %d\n", errno);
+		return -1;
+	}
 
 	/* Initialize addr in as far as possible.
 	 */
-    // YOUR CODE HERE
-
+    struct sockaddr_in bindingAddr;
+    bindingAddr.sin_family = AF_INET;
+    bindingAddr.sin_port = htons(bind_port);
 	/* Bind the socket.
 	 */
-    // YOUR CODE HERE
+    int setBindSuccess = bind(skt, &bindingAddr, sizeof(struct sockaddr_in));
+    if (setBindSuccess < 0) //call to socket returned error
+	{
+		fprintf(stderr, "Call to bind returned error in main with error code %d\n", errno);
+		return -1;
+	}
 
 	/* Keep track of the socket.
 	 */

@@ -130,7 +130,7 @@ void minisocket_close_alarm_handler(void* arg)
 {
 	minisocket_t *socket = (minisocket_t*)arg;
 	socket->state = CLOSED;
-	while (semaphore_has_sleep_thread(socket->closingAlarmSema)) semaphore_V(socket->closingAlarmSema);// wake up any thread waiting for firing this alarm
+	while (semaphore_has_sleep_thread(socket->closingAlarmSema)) semaphore_V(socket->closingAlarmSema); // wake up any thread waiting for firing this alarm
 }
 
 // It sends a packet reliably (by trying to send TRANSMISSION_TRIES times for ack).
@@ -314,7 +314,6 @@ minisocket_t* minisocket_client_create(const network_address_t addr, int port, m
 
 	//establish handshake
 	socket->header.message_type = MSG_SYN;
-	assert(socket->seqNumber == 0 && socket->ackNumber == 0);
 	pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
 	pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
 
@@ -343,10 +342,7 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 	if (socket == NULL || error == NULL || len < 0 || (msg == NULL && len != 0)) {
 		*error = SOCKET_INVALIDPARAMS;
 		return -1;
-	} else if (len == 0 || socket->state != CONNECTED) {
-		*error = SOCKET_NOERROR;
-		return 0;
-	}
+	} 
 
 	semaphore_P(socket->canSend); // allow only one send
 
@@ -355,25 +351,21 @@ int minisocket_send(minisocket_t *socket, const char *msg, int len, minisocket_e
 		*error = SOCKET_SENDERROR;
 		return -1;
 	}
-	
-	int sentBytes = 0;
-	if (len <= MAXSOCKET_MAX_MSG_SIZE) { // can send in one packet
-		socket->waitStatus = WAIT_ACK;
-		sentBytes = minisocket_send_a_packet(socket, &socket->header, msg, len, GOT_ACK, error);
-	} else { // need to paritition msg into multiple packets
-		while (len > 0) {
-			int currLen = (len > MAXSOCKET_MAX_MSG_SIZE) ? MAXSOCKET_MAX_MSG_SIZE : len;
-			socket->waitStatus = WAIT_ACK;
-			int currSendBytes = minisocket_send_a_packet(socket, &socket->header, msg + sentBytes, currLen, GOT_ACK, error);
-			if (currSendBytes == -1) { // sending error
-				break;	// stop sending remaining data
-			}
 
-			sentBytes += currSendBytes;
-			len -= currSendBytes;
+	*error = SOCKET_NOERROR;
+	int sentBytes = 0;
+	while (len > 0) {
+		int currLen = (len > MAXSOCKET_MAX_MSG_SIZE) ? MAXSOCKET_MAX_MSG_SIZE : len;
+		socket->waitStatus = WAIT_ACK;
+		int currSendBytes = minisocket_send_a_packet(socket, &socket->header, msg + sentBytes, currLen, GOT_ACK, error);
+		if (currSendBytes == -1) { // sending error
+			break;	// stop sending remaining data
 		}
-	}
-	
+
+		sentBytes += currSendBytes;
+		len -= currSendBytes;
+	} 
+
 	semaphore_V(socket->canSend); //release socket for other send
 	return sentBytes;
 }
@@ -384,52 +376,52 @@ int minisocket_receive(minisocket_t *socket, char *msg, int max_len, minisocket_
 	if (socket == NULL || error == NULL || max_len < 0 || (msg == NULL && max_len != 0)) {
 		*error = SOCKET_INVALIDPARAMS;
 		return -1;
-	} else if (max_len == 0 || socket->state != CONNECTED) {
-		*error = SOCKET_NOERROR;
-		return 0;
-	}
+	} 
 
 	assert(socket->packetIsReady != NULL && socket->incomingDataPackets != NULL);
+	*error = SOCKET_NOERROR;
 	int receivedBytes = 0;
-	if (socket->leftOverPacket != NULL) { // there is data left from last receive, read it and return
-		receivedBytes = socket->leftOverPacket->size - socket->usedPacketBytes;
-		assert(receivedBytes > 0);
-		if (receivedBytes > max_len) receivedBytes = max_len;
-		memcpy(msg, socket->leftOverPacket->buffer + socket->usedPacketBytes, receivedBytes);
-		socket->usedPacketBytes += receivedBytes;
-		if (socket->leftOverPacket->size == socket->usedPacketBytes) { // if all bytes in the buffer are received
-			free(socket->leftOverPacket); // release the packet
-			socket->leftOverPacket = NULL;
-			socket->usedPacketBytes = 0;
-		}
-	} else { // read from socket's queue incomingDataPackets
-		assert(socket->usedPacketBytes == 0);
-		semaphore_P(socket->packetIsReady); //P semaphore to wait for receiving data packet
+	if (max_len > 0) {
+		if (socket->leftOverPacket != NULL) { // there is data left from last receive, read it and return
+			receivedBytes = socket->leftOverPacket->size - socket->usedPacketBytes;
+			assert(receivedBytes > 0);
+			if (receivedBytes > max_len) receivedBytes = max_len;
+			memcpy(msg, socket->leftOverPacket->buffer + socket->usedPacketBytes, receivedBytes);
+			socket->usedPacketBytes += receivedBytes;
+			if (socket->leftOverPacket->size == socket->usedPacketBytes) { // if all bytes in the buffer are received
+				free(socket->leftOverPacket); // release the packet
+				socket->leftOverPacket = NULL;
+				socket->usedPacketBytes = 0;
+			}
+		} else { // read from socket's queue incomingDataPackets
+			assert(socket->usedPacketBytes == 0);
+			semaphore_P(socket->packetIsReady); //P semaphore to wait for receiving data packet
 
-		// check if the socket is still connected
-		if (socket->state != CONNECTED) {
-			*error = SOCKET_RECEIVEERROR;
-			return -1;
-		}
+			// check if the socket is still connected
+			if (socket->state != CONNECTED) {
+				*error = SOCKET_RECEIVEERROR;
+				return -1;
+			}
 
-		//once a packet arrives and we wake up
-		interrupt_level_t old_level = set_interrupt_level(DISABLED); // critical session (to dequeue the packet queue)
-		int dequeueSuccess = queue_dequeue(socket->incomingDataPackets, (void**)&socket->leftOverPacket);
-		set_interrupt_level(old_level); //end of critical session to restore interrupt level
-		AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minisocket_receive()");
+			//once a packet arrives and we wake up
+			interrupt_level_t old_level = set_interrupt_level(DISABLED); // critical session (to dequeue the packet queue)
+			int dequeueSuccess = queue_dequeue(socket->incomingDataPackets, (void**)&socket->leftOverPacket);
+			set_interrupt_level(old_level); //end of critical session to restore interrupt level
+			AbortOnCondition(dequeueSuccess != 0, "Queue_dequeue failed in minisocket_receive()");
 
-		int totalUsedBytes = sizeof(mini_header_reliable_t);
-		int dataBytes = socket->leftOverPacket->size - totalUsedBytes;
-		assert(dataBytes > 0); // if no data, the packet should not be enqueued
-		receivedBytes = (dataBytes > max_len) ? max_len : dataBytes;
-		memcpy(msg, socket->leftOverPacket->buffer + totalUsedBytes, receivedBytes);
-		totalUsedBytes += receivedBytes;
+			int totalUsedBytes = sizeof(mini_header_reliable_t);
+			int dataBytes = socket->leftOverPacket->size - totalUsedBytes;
+			assert(dataBytes > 0); // if no data, the packet should not be enqueued
+			receivedBytes = (dataBytes > max_len) ? max_len : dataBytes;
+			memcpy(msg, socket->leftOverPacket->buffer + totalUsedBytes, receivedBytes);
+			totalUsedBytes += receivedBytes;
 
-		if (socket->leftOverPacket->size > totalUsedBytes) { // if there are some bytes left
-			socket->usedPacketBytes = totalUsedBytes;
-		} else { // the packet is fully received
-			free(socket->leftOverPacket); // release the packet
-			socket->leftOverPacket = NULL;
+			if (socket->leftOverPacket->size > totalUsedBytes) { // if there are some bytes left
+				socket->usedPacketBytes = totalUsedBytes;
+			} else { // the packet is fully received
+				free(socket->leftOverPacket); // release the packet
+				socket->leftOverPacket = NULL;
+			}
 		}
 	}
 
@@ -480,50 +472,44 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 	unsigned int receivedSeqNum = unpack_unsigned_int(receivedHeaderPtr->seq_number);
 	unsigned int receivedAckNum = unpack_unsigned_int(receivedHeaderPtr->ack_number);
 	minisocket_t* socket = g_socketPortPtrs[destPort];
-
 	network_address_t remoteAddr;
 	unpack_address(receivedHeaderPtr->source_address, remoteAddr);
-	if (receivedHeaderPtr->message_type == MSG_SYN && socket->waitStatus != WAIT_SYN) { // send back MSG_FIN message if received packet is MSG_SYN
-		mini_header_reliable_t finHeader;
-		memcpy(&finHeader, &socket->header, sizeof(mini_header_reliable_t));
-		memcpy(finHeader.destination_address, receivedHeaderPtr->source_address, sizeof(receivedHeaderPtr->source_address));
-		memcpy(finHeader.destination_port, receivedHeaderPtr->source_port, sizeof(receivedHeaderPtr->source_port));
-		finHeader.message_type = MSG_FIN;
-		pack_unsigned_int(finHeader.seq_number, 0);
-		pack_unsigned_int(finHeader.ack_number, 1);
-		network_send_pkt(remoteAddr, sizeof(mini_header_reliable_t), (char*)&finHeader, 0, NULL);
+
+	if (socket->state == CLOSED) { // ignore packet if the socket is closed
 		free(arg);
 		return;
-	}
-
-	//check if remote addr+port agrees with socket's if socket has remote's info
-	if (socket->waitStatus != WAIT_SYN) {
-		assert(sizeof(int64_t) == 8 && sizeof(short) == 2);
-		int64_t* recAddr_int = (int64_t*)receivedHeaderPtr->source_address;
-		short* recPort_int = (short*)receivedHeaderPtr->source_port;
-		int64_t* socketAddr_int = (int64_t*)socket->header.destination_address;
-		short* socketPort_int = (short*)socket->header.destination_port;
-		if (*recAddr_int != *socketAddr_int || *recPort_int != *socketPort_int) { // if packet from a different addr+port, discard it
+	} else if (socket->waitStatus != WAIT_SYN) { // if socket has remote addr+port
+		if (receivedHeaderPtr->message_type == MSG_SYN) { // respond with MSG_FIN message
+			mini_header_reliable_t finHeader;
+			memcpy(&finHeader, &socket->header, sizeof(mini_header_reliable_t));
+			memcpy(finHeader.destination_address, receivedHeaderPtr->source_address, sizeof(receivedHeaderPtr->source_address));
+			memcpy(finHeader.destination_port, receivedHeaderPtr->source_port, sizeof(receivedHeaderPtr->source_port));
+			finHeader.message_type = MSG_FIN;
+			network_send_pkt(remoteAddr, sizeof(mini_header_reliable_t), (char*)&finHeader, 0, NULL);
 			free(arg);
 			return;
+		} else { //check agreement between remote addr+port and socket's
+			assert(sizeof(int64_t) == sizeof(receivedHeaderPtr->source_address) && sizeof(short) == sizeof(receivedHeaderPtr->source_port));
+			int64_t* recAddr_int = (int64_t*)receivedHeaderPtr->source_address;
+			short* recPort_int = (short*)receivedHeaderPtr->source_port;
+			int64_t* socketAddr_int = (int64_t*)socket->header.destination_address;
+			short* socketPort_int = (short*)socket->header.destination_port;
+			if (*recAddr_int != *socketAddr_int || *recPort_int != *socketPort_int) { // discard mismatched remote addr+port
+				free(arg);
+				return;
+			}
 		}
 	}
 
-	// ignore packet if the socket is closed
-	if (socket->state == CLOSED) {
-		free(arg);
-		return;
-	}
-
-	// packet matches socket's addr+port or MSG_SYN packet socket is waiting for
+	// packet matches socket's addr+port or MSG_SYN packet that socket is waiting for
 	bool needFree = true;
 	switch (receivedHeaderPtr->message_type) {
 	case MSG_SYN:
 		if (socket->waitStatus == WAIT_SYN && socket->waitAckNumber == receivedAckNum && dataBytes == 0) { // expected packet is received
-			socket->waitStatus = GOT_SYN;
 			unpack_address(receivedHeaderPtr->source_address, socket->remoteAddr);
 			memcpy(socket->header.destination_address, receivedHeaderPtr->source_address, sizeof(receivedHeaderPtr->source_address));
 			memcpy(socket->header.destination_port, receivedHeaderPtr->source_port, sizeof(receivedHeaderPtr->source_port));
+			socket->waitStatus = GOT_SYN;
 			semaphore_V(socket->waitSema);
 		}
 		free(arg);
@@ -538,10 +524,9 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 			socket->header.message_type = MSG_ACK;
 			pack_unsigned_int(socket->header.seq_number, socket->seqNumber);
 			pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
+			socket->waitStatus = GOT_SYNACK;
 			// send ACK packet to respond
 			network_send_pkt(socket->remoteAddr, sizeof(mini_header_reliable_t), (char*)&socket->header, 0, NULL);
-
-			socket->waitStatus = GOT_SYNACK;
 			semaphore_V(socket->waitSema);
 		} 
 
@@ -563,8 +548,7 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 			semaphore_V(socket->waitSema);
 		}
 
-		// data packet & socket is ready to accept data
-		if (dataBytes > 0 && socket->state == CONNECTED) { 
+		if (dataBytes > 0 && socket->state == CONNECTED) { // data packet & socket is ready to accept data
 			if (socket->ackNumber == receivedSeqNum) {
 				socket->ackNumber += dataBytes;
 				pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
@@ -585,6 +569,7 @@ void minisocket_network_handler(network_interrupt_arg_t* arg)
 			socket->state = CLOSING;
 			socket->ackNumber++; // ack_num is increased by 1 to respond a MSG_FIN packet with another MSG_FIN packet
 			pack_unsigned_int(socket->header.ack_number, socket->ackNumber);
+			socket->waitStatus = GOT_FIN;
 			register_alarm(FIN_WAIT_TIME, minisocket_close_alarm_handler, socket);
 		}
 
