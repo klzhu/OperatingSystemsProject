@@ -180,7 +180,7 @@ static void get_id(int skt, struct sockaddr_in *addr){
 	socklen_t len;
 
 	len = sizeof(that);
-	if (getsockname(skt, (struct sockaddr *) &that, &len) < 0) {
+	if (getsockname(skt, (struct sockaddr *) &this, &len) < 0) {
 		perror("getsockname");
 		exit(1);
 	}
