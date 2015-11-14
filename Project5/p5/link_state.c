@@ -143,5 +143,47 @@ struct sockaddr_in string_to_addr(char* string) {
  * last hop from src to x.
  */
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
+	int unvisitedNodes[nnodes];
+	memset(unvisitedNodes, 0, sizeof(unvisitedNodes)); //0 indicates node has not been visited
+	int i;
+	for (i = 0; i < nnodes; i++)
+	{
+		dist[i] = INFINITY;
+		prev[i] = UNDEFINED;
+	}
+
+	dist[src] = 0; //dist from source node to itself is 0
+
+	int k = 0;
+	while (k < nnodes) //iterate this for every node in our graph so every node has been visited
+	{
+		int minDistance = INFINITY;
+		int index = UNDEFINED;
+
+		//find the next unvisited node with the min distance from our src
+		int j;
+		for (j = 0; j < nnodes; j++)
+		{
+			if (dist[j] < INFINITY && unvisitedNodes[j] == 0)
+			{
+				minDistance = dist[j];
+				index = j;
+			}
+		}
+
+		unvisitedNodes[index] = 1; //mark this node as visited
+
+		int g;
+		for (g = 0; g < nnodes; g++) //find all neighbor nodes and update distances if necessary
+		{
+			if (unvisitedNodes[g] == 0 && graph[INDEX(index, g, nnodes)] != 0 && graph[INDEX(index, g, nnodes)] != INFINITY && dist[g] > (graph[INDEX(index, g, nnodes)] + dist[index]))
+			{
+				dist[g] = dist[index] + graph[INDEX(index, g, nnodes)];
+				prev[g] = index;
+			}
+		}
+
+		k++;
+	}
 }
 
