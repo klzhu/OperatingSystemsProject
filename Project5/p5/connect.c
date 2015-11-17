@@ -47,6 +47,12 @@ struct file_info *file_info;
 int nfiles;
 char *uid_gen = (char *) 1;
 
+//payload counter
+unsigned long payloadCounter = 0;
+
+//flooding queue that stores the addr/port of our neighbors we need to flood
+queue_t *floodQueue = NULL;
+
 struct sockaddr_in my_addr;
 
 /* Add file info about 'fd'.
@@ -117,6 +123,43 @@ void file_broadcast(char *buf, int size, struct file_info *fi){
 			file_info_send(fi2, buf, size);
 		}
 	}
+}
+
+/* Creates a gossip message with the payload and calls file_broadcast
+*/
+void flood_payload()
+{
+	char *myAddr = addr_to_string(my_addr);
+	char *payloadCounterChar;
+	sprintf(payloadCounterChar, "%lu", payloadCounter);
+	char *temp = "G<";
+	strcat(temp, myAddr);
+	strcat(temp, ">/<");
+	strcat(temp, payloadCounterChar);
+	strcat(temp, ">/");
+
+	char *gossipMsg = malloc(strlen(temp));
+	strcpy(gossipMsg, temp);
+	//construct payload and broadcast to our neighbors
+	struct file_info *fi;
+	for (fi = file_info; fi != 0; fi = fi->next) {
+		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status = FI_CONNECTED)) {
+			char *neighborAddr = ";<";
+			strcat(neighborAddr, addr_to_string(fi->addr));
+			strcat(neighborAddr, '>');
+			strcat(temp, neighborAddr);
+			gossipMsg = realloc(gossipMsg, strlen(temp));
+			strcpy(gossipMsg, temp);
+		}
+	}
+
+	strcat(temp, "\n");
+	gossipMsg = realloc(gossipMsg, temp);
+	strcpy(gossipMsg, temp);
+
+	file_broadcast(gossipMsg, strlen(gossipMsg), NULL);
+	payloadCounter++;
+	free(gossipMsg);
 }
 
 /* This is a timer handler to reconnect to a peer after a period of time elapsed.
@@ -295,6 +338,9 @@ void hello_received(struct file_info *fi, char *addr_port){
 	 */
 	fi->addr = addr;
 	fi->status = FI_KNOWN;
+
+	//flood gossip
+	flood_payload();
 }
 
 /* A line of input (a command) is received.  Look at the first character to determine
@@ -382,6 +428,9 @@ static void message_handler(struct file_info *fi, int events){
 			timer_start(time, timer_reconnect, fi->uid);
 			fi->fd = -1;
 			fi->u.fi_outgoing.status = FI_CONNECTING;
+
+			//flood gossip to let neighbors know a connection was lost
+			flood_payload();
 		}
 		else {
 			fi->type = FI_FREE;
