@@ -48,10 +48,7 @@ int nfiles;
 char *uid_gen = (char *) 1;
 
 //payload counter
-unsigned long payloadCounter = 0;
-
-//flooding queue that stores the addr/port of our neighbors we need to flood
-queue_t *floodQueue = NULL;
+unsigned long gossipCounter = 0;
 
 struct sockaddr_in my_addr;
 
@@ -129,36 +126,32 @@ void file_broadcast(char *buf, int size, struct file_info *fi){
 */
 void flood_payload()
 {
-	char *myAddr = addr_to_string(my_addr);
-	char *payloadCounterChar;
-	sprintf(payloadCounterChar, "%lu", payloadCounter);
-	char *temp = "G<";
-	strcat(temp, myAddr);
-	strcat(temp, ">/<");
-	strcat(temp, payloadCounterChar);
-	strcat(temp, ">/");
+	char temp[256];
+	char *myAddrChar = addr_to_string(my_addr);
+	sprintf(temp, "G%s/%lu/", myAddrChar, gossipCounter);
+	free(myAddrChar);
 
-	char *gossipMsg = malloc(strlen(temp));
+	char *gossipMsg = malloc(strlen(temp) + 1);
 	strcpy(gossipMsg, temp);
 	//construct payload and broadcast to our neighbors
 	struct file_info *fi;
-	for (fi = file_info; fi != 0; fi = fi->next) {
-		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status = FI_CONNECTED)) {
-			char *neighborAddr = ";<";
-			strcat(neighborAddr, addr_to_string(fi->addr));
-			strcat(neighborAddr, '>');
-			strcat(temp, neighborAddr);
-			gossipMsg = realloc(gossipMsg, strlen(temp));
-			strcpy(gossipMsg, temp);
+	for (fi = file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
+		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED)) {
+			char appendPayload[100];
+			char *neighborAddrChar = addr_to_string(fi->addr);
+			sprintf(appendPayload, ";%s", neighborAddrChar);
+			free(neighborAddrChar);
+			gossipMsg = realloc(gossipMsg, strlen(gossipMsg) + strlen(appendPayload) + 1);
+			strcat(gossipMsg, appendPayload);
 		}
 	}
 
-	strcat(temp, "\n");
-	gossipMsg = realloc(gossipMsg, temp);
-	strcpy(gossipMsg, temp);
+	gossipMsg = realloc(gossipMsg, strlen(gossipMsg) + 2);
+	strcat(gossipMsg, "\n");
 
 	file_broadcast(gossipMsg, strlen(gossipMsg), NULL);
-	payloadCounter++;
+	printf("this is my payload msg %s\n", gossipMsg);
+	gossipCounter++;
 	free(gossipMsg);
 }
 
