@@ -16,6 +16,11 @@
 void minimsg_network_handler(network_interrupt_arg_t* arg);
 void minisocket_network_handler(network_interrupt_arg_t* arg);
 
+void free_network_arg(void * arg) // This is used in queue_free_nodes_and_queue()
+{
+	free((network_interrupt_arg_t*)arg);
+}
+
 void common_network_handler(network_interrupt_arg_t* arg)
 {
 	interrupt_level_t old_level = set_interrupt_level(DISABLED); //disable interrupt

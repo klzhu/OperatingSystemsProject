@@ -155,7 +155,7 @@ queue_free(queue_t *queue) {
 
 //this method frees all the nodes as well as the queue itself (P1 and P3 spec)
 int
-queue_free_nodes_and_queue(queue_t *queue) {
+int queue_free_nodes_and_queue(queue_t *queue, void(*free_data)(void*)) {
 	//if queue is empty or null
 	if (queue == NULL) return 0;
 
@@ -163,6 +163,7 @@ queue_free_nodes_and_queue(queue_t *queue) {
 	while (curr != NULL)
 	{
 		node_t* tempNext = curr->next;
+		free_data(curr->dataPtr);
 		free(curr);
 		curr = tempNext;
 	}

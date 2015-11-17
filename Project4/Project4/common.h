@@ -6,5 +6,6 @@
 
 
 // Add any constants, function signatures, etc. here
+void free_network_arg(void * arg);
 
 #endif /*__COMMON_H__*/

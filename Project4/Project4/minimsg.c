@@ -164,7 +164,7 @@ miniport_destroy(miniport_t* miniport)
 		semaphore_V(g_semaUnboundLock); //end of critical session
 
 		//free our queue
-		int queueFreeSuccess = queue_free_nodes_and_queue(miniport->unbound_port.incoming_data);
+		int queueFreeSuccess = queue_free_nodes_and_queue(miniport->unbound_port.incoming_data, free_network_arg);
 		AbortOnCondition(queueFreeSuccess == -1, "Queue_free failed in miniport_destroy()");
 
 		//free semaphore

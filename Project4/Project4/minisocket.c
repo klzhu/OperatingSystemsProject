@@ -14,6 +14,7 @@
 #include "interrupts.h"
 #include "miniheader.h"
 #include "alarm.h"
+#include "common.h"
 
 // ---- Constants ---- //
 #define CLIENT_PORT_START		32768	/* The beginning port number for client port */
@@ -71,7 +72,7 @@ void free_socket(minisocket_t* socket)
 	semaphore_destroy(socket->canSend);
 	semaphore_destroy(socket->packetIsReady);
 	semaphore_destroy(socket->closingAlarmSema);
-	queue_free_nodes_and_queue(socket->incomingDataPackets);
+	queue_free_nodes_and_queue(socket->incomingDataPackets, free_network_arg);
 	free(socket);
 }
 
