@@ -5,10 +5,14 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define INFINITY					INT_MAX
 #define UNDEFINED					(-1)
 #define INDEX(x, y, nnodes)			((x) + (nnodes) * (y))
+// The following returns if nodes x and y are connected neighbors or not. We assume that every pair of nodes are 
+// initialized to distance INFINITY, and x and y are connected neighors iff dist(x, y) != INFINITY and dist(y, x) != INFINITY
+#define CONNECTED_NEIGHBORS(graph, x, y, nnodes)	((graph)[INDEX((x), (y), (nnodes))] != INFINITY && (graph)[INDEX((y), (x), (nnodes))] != INFINITY)
 
 struct node_list {
     char **nodes;
@@ -50,8 +54,8 @@ int nl_compare(const void *e1, const void *e2){
 	return strcmp(*p1, *p2);
 }
 
-void nl_sort(struct node_list *nl){
-	qsort(nl->nodes, nl->nnodes, sizeof(char *), nl_compare);
+void nl_sort(struct node_list *nl)
+{	qsort(nl->nodes, nl->nnodes, sizeof(char *), nl_compare);
 	nl->unsorted = 0;
 }
 
@@ -109,7 +113,7 @@ void set_dist(struct node_list *nl, int graph[], int nnodes, char *src, char *ds
 		return;
 	}
 	graph[INDEX(x, y, nnodes)] = dist;
-	graph[INDEX(y, x, nnodes)] = dist;
+	//graph[INDEX(y, x, nnodes)] = dist;
 }
 
 char* addr_to_string (struct sockaddr_in addr) {
@@ -143,10 +147,11 @@ struct sockaddr_in string_to_addr(char* string) {
  * last hop from src to x.
  */
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
-	int unvisitedNodes[nnodes];
-	memset(unvisitedNodes, 0, sizeof(unvisitedNodes)); //0 indicates node has not been visited
-	int i;
-	for (i = 0; i < nnodes; i++)
+	bool visitedNodes[nnodes]; // tracks if node has been visited
+
+	// initialization
+	memset(visitedNodes, 0, nnodes*sizeof(bool)); // initializing each node to false
+	for (int i = 0; i < nnodes; i++)
 	{
 		dist[i] = INFINITY;
 		prev[i] = UNDEFINED;
@@ -154,36 +159,33 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 
 	dist[src] = 0; //dist from source node to itself is 0
 
-	int k = 0;
-	while (k < nnodes) //iterate this for every node in our graph so every node has been visited
+	for (int count = 0; count < nnodes; count++) //iterate this for every node
 	{
 		int minDistance = INFINITY;
-		int index = UNDEFINED;
+		int minIndex = UNDEFINED;
 
 		//find the next unvisited node with the min distance from our src
-		int j;
-		for (j = 0; j < nnodes; j++)
+		for (int j = 0; j < nnodes; j++)
 		{
-			if (dist[j] < INFINITY && unvisitedNodes[j] == 0)
+			if (!visitedNodes[j] && dist[j] < minDistance)
 			{
 				minDistance = dist[j];
-				index = j;
+				minIndex = j;
 			}
 		}
 
-		unvisitedNodes[index] = 1; //mark this node as visited
+		visitedNodes[minIndex] = true; //mark this node as visited
 
-		int g;
-		for (g = 0; g < nnodes; g++) //find all neighbor nodes and update distances if necessary
+		for (int g = 0; g < nnodes; g++) //find all neighbor nodes and update distances if necessary
 		{
-			if (unvisitedNodes[g] == 0 && graph[INDEX(index, g, nnodes)] != 0 && graph[INDEX(index, g, nnodes)] != INFINITY && dist[g] > (graph[INDEX(index, g, nnodes)] + dist[index]))
+			if (visitedNodes[g]) continue; //we've already visited this node
+
+			if (CONNECTED_NEIGHBORS(graph, minIndex, g, nnodes) && dist[g] > (graph[INDEX(minIndex, g, nnodes)] + minDistance))
 			{
-				dist[g] = dist[index] + graph[INDEX(index, g, nnodes)];
-				prev[g] = index;
+				dist[g] = graph[INDEX(minIndex, g, nnodes)] + minDistance;
+				prev[g] = minIndex;
 			}
 		}
-
-		k++;
 	}
 }
 

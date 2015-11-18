@@ -47,8 +47,14 @@ struct file_info *file_info;
 int nfiles;
 char *uid_gen = (char *) 1;
 
-//payload counter
+//gossip counter
 unsigned long gossipCounter = 0;
+
+struct node_list *networkNodes = NULL;
+int *networkGraph = malloc(1);
+extern struct gossip *gossip;
+int dist[];
+int prev[];
 
 struct sockaddr_in my_addr;
 
@@ -122,38 +128,138 @@ void file_broadcast(char *buf, int size, struct file_info *fi){
 	}
 }
 
-/* Creates a gossip message with the payload and calls file_broadcast
+/* Creates a gossip message and floods it with file_broadcast
 */
-void flood_payload()
+void flood_gossip()
 {
-	char temp[256];
+	size_t capacity = 256;
+	char *gossipMsg = malloc(capacity);
 	char *myAddrChar = addr_to_string(my_addr);
-	sprintf(temp, "G%s/%lu/", myAddrChar, gossipCounter);
-	free(myAddrChar);
+	sprintf(gossipMsg, "G%s/%lu/", myAddrChar, gossipCounter);
+	free(myAddrChar); //free the malloced mem that addr_to_string returned
+	size_t dataSize = strlen(gossipMsg); //# of bytes used excluding '\0' for a char string
 
-	char *gossipMsg = malloc(strlen(temp) + 1);
-	strcpy(gossipMsg, temp);
-	//construct payload and broadcast to our neighbors
+	//construct payload
 	struct file_info *fi;
 	for (fi = file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
-		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED)) {
-			char appendPayload[100];
+		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
 			char *neighborAddrChar = addr_to_string(fi->addr);
-			sprintf(appendPayload, ";%s", neighborAddrChar);
+			size_t addrLength = strlen(neighborAddrChar);
+			if (capacity - dataSize < addrLength + 1) { //if we don't have room to fit neighborAddrChar (excluding '\0') and ';', resize
+				capacity *= 2;
+				gossipMsg = realloc(gossipMsg, capacity); //double the capacity
+			}
+			*(gossipMsg + dataSize++) = ';'; // append ';' into payload
+			memcpy(gossipMsg + dataSize, neighborAddrChar, addrLength); //append neighborAddrChar excluding ending '\0'
+			dataSize += addrLength;
+			assert(dataSize == strlen(gossipMsg));
 			free(neighborAddrChar);
-			gossipMsg = realloc(gossipMsg, strlen(gossipMsg) + strlen(appendPayload) + 1);
-			strcat(gossipMsg, appendPayload);
 		}
 	}
 
-	gossipMsg = realloc(gossipMsg, strlen(gossipMsg) + 2);
-	strcat(gossipMsg, "\n");
+	// add ending '\n'
+	if (capacity - dataSize < 2) {
+		capacity = dataSize + 2;
+		gossipMsg = realloc(gossipMsg, capacity); // increase size to account for '\n' and '\0'
+	}
+	gossipMsg[dataSize++] = '\n';	// append '\n'
+	gossipMsg[dataSize] = '\0';		// append ending '\0' without increasing dataSize
+	assert(dataSize == strlen(gossipMsg));
 
 	file_broadcast(gossipMsg, strlen(gossipMsg), NULL);
-	printf("this is my payload msg %s\n", gossipMsg);
+	printf("this is my payload msg %s\n", gossipMsg); //DEBUGGING, remove later
 	gossipCounter++;
 	free(gossipMsg);
 }
+
+/* Creates the network graph and calls dijkstra's on it
+*/
+void computeNetworkGraph()
+{
+	nl_sort(networkNodes); //sort our nodes first
+	int numNodes = nl_nsites(networkNodes); //get the number of nodes we have
+
+	free(networkGraph); //free previous graph and reconstruct new graph
+	networkGraph = malloc(numNodes * numNodes);
+	memset(networkGraph, INFINITY, sizeof(networkGraph)); //set all distances to infinity first
+
+	char *myself = addr_to_string(my_addr);
+	set_dist(networkNodes, networkGraph, numNodes, myself, myself, 0); //set my distance from myself to 0 in the network graph
+	for (fi = file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
+		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
+			char *neighborAddr = addr_to_string(fi->addr);
+			set_dist(networkNodes, networkGraph, numNodes, myself, neighborAddr, 1); //my neighbors have a distance of 1 to me
+			free(neighborAddr);
+		}
+	}
+
+	//set distances for other neighbors in the graph based on my previous gossips
+	struct gossip *g;
+	for (g = gossip; g != 0; g = gossip_next(g)) {
+		char *gossipSrcAddr = addr_to_string(gossip_src(g));
+		set_dist(networkNodes, networkGraph, numNodes, gossipSrcAddr, gossipSrcAddr, 0); //set gosssipSrc distance from gossipSrc to 0 in the network graph
+		char *gossip = gossip_latest(g);
+
+		char *payloadNeighborAddr = strtok(gossip, ";\n");
+		while (payloadNeighborAddr != NULL)
+		{
+			nl_add(networkNodes, payloadNeighborAddr);
+			payloadNeighborAddr = strtok(NULL, ";\n");
+		}
+
+	}
+
+	//call dijkstra's algorithm now
+	djikstra(networkGraph, numNodes, myself, dist, prev);
+
+	free(myself);
+}
+
+/* Updates the nodes struct based on a new connection we received
+*/
+void updateNodesFromConn(struct sockaddr_in *addr)
+{
+	//if our node_list struct has not been initialized, initialize it and add ourselves to it
+	if (networkNodes == NULL)
+	{
+		networkNodes = nl_create();
+		if (networkNodes == NULL)
+		{
+			fprintf(stderr, "failure in computeNetworkGraph()\n");
+			return;
+		}
+		char *myAddrChar = addr_to_string(my_addr);
+		nl_add(networkNodes, myAddrChar); //add ourselves to the list of nodes
+		free(myAddrChar);
+	}
+
+	//add our new connection neighbor to the node list
+	char *newNeighborAddr = addr_to_string(addr);
+	nl_add(networkNodes, newNeighborAddr);
+	free(newNeighborAddr);
+
+	//recompute the network graph based on the new node
+	computeNetworkGraph();
+}
+
+/* Updates the nodes struct based on a new gossip we received
+*/
+void updateNodesFromGossip(char *payload)
+{
+	assert(networkNodes != NULL); //if we received a gossip, then we should have first established a connection
+
+	//add every addr form the payload to our node list. nl_add won't add it if it already exists in our node list
+	char *payloadNeighborAddr = strtok(payload, ";\n");
+	while (payloadNeighborAddr != NULL)
+	{
+		nl_add(networkNodes, payloadNeighborAddr);
+		payloadNeighborAddr = strtok(NULL, ";\n");
+	}
+
+	//recompute the network graph incase there were any new nodes added
+	computeNetworkGraph();
+}
+
 
 /* This is a timer handler to reconnect to a peer after a period of time elapsed.
  */
@@ -332,8 +438,8 @@ void hello_received(struct file_info *fi, char *addr_port){
 	fi->addr = addr;
 	fi->status = FI_KNOWN;
 
-	//flood gossip
-	flood_payload();
+	//flood gossip since we got a new connection
+	flood_gossip();
 }
 
 /* A line of input (a command) is received.  Look at the first character to determine
@@ -421,13 +527,13 @@ static void message_handler(struct file_info *fi, int events){
 			timer_start(time, timer_reconnect, fi->uid);
 			fi->fd = -1;
 			fi->u.fi_outgoing.status = FI_CONNECTING;
-
-			//flood gossip to let neighbors know a connection was lost
-			flood_payload();
 		}
 		else {
 			fi->type = FI_FREE;
 		}
+
+		//flood gossip because we lost a neighbor
+		flood_gossip();
 
 		return;
 	}
