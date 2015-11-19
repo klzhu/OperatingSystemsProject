@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <assert.h>
 #include "global.h"
 
 /* Information about files and sockets is kept here.  An outgoing connection is one
@@ -50,11 +51,11 @@ char *uid_gen = (char *) 1;
 //gossip counter
 unsigned long gossipCounter = 0;
 
-struct node_list *networkNodes = NULL;
-int *networkGraph = malloc(1);
 extern struct gossip *gossip;
-int dist[];
-int prev[];
+struct node_list *networkNodes = NULL;
+int *networkGraph = NULL;
+int *dist = NULL;
+int *prev = NULL;
 
 struct sockaddr_in my_addr;
 
@@ -179,12 +180,22 @@ void computeNetworkGraph()
 	nl_sort(networkNodes); //sort our nodes first
 	int numNodes = nl_nsites(networkNodes); //get the number of nodes we have
 
-	free(networkGraph); //free previous graph and reconstruct new graph
+	if (dist != NULL) free(dist);
+	if (prev != NULL) free(prev);
+
+	if (networkGraph != NULL)
+	{
+		free(networkGraph); //free previous graph and reconstruct new graph
+	}
+
+	dist = (int*) malloc(numNodes * sizeof(int));
+	prev = (int*) malloc(numNodes * sizeof(int));
 	networkGraph = malloc(numNodes * numNodes);
 	memset(networkGraph, INFINITY, sizeof(networkGraph)); //set all distances to infinity first
 
 	char *myself = addr_to_string(my_addr);
 	set_dist(networkNodes, networkGraph, numNodes, myself, myself, 0); //set my distance from myself to 0 in the network graph
+	struct file_info *fi;
 	for (fi = file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
 		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
 			char *neighborAddr = addr_to_string(fi->addr);
@@ -198,26 +209,35 @@ void computeNetworkGraph()
 	for (g = gossip; g != 0; g = gossip_next(g)) {
 		char *gossipSrcAddr = addr_to_string(gossip_src(g));
 		set_dist(networkNodes, networkGraph, numNodes, gossipSrcAddr, gossipSrcAddr, 0); //set gosssipSrc distance from gossipSrc to 0 in the network graph
-		char *gossip = gossip_latest(g);
+		char *gossipCpy = malloc(strlen(gossip_latest(g)) + 2);
+		memcpy(gossipCpy, gossip_latest(g), strlen(gossip_latest(g)) + 2);
+		//char *gossip = gossip_latest(g);
 
-		char *payloadNeighborAddr = strtok(gossip, ";\n");
+		char *payloadNeighborAddr = strtok(gossipCpy, ";\n");
 		while (payloadNeighborAddr != NULL)
 		{
-			nl_add(networkNodes, payloadNeighborAddr);
+			//nl_add(networkNodes, payloadNeighborAddr);
+			set_dist(networkNodes, networkGraph, numNodes, gossipSrcAddr, payloadNeighborAddr, 1);
 			payloadNeighborAddr = strtok(NULL, ";\n");
 		}
 
+		free(gossipCpy);
 	}
 
+	printf("printing network nodes\n");
 	//call dijkstra's algorithm now
-	djikstra(networkGraph, numNodes, myself, dist, prev);
-
+	int t;
+	for (t = 0; t < numNodes; t++)
+	{
+		printf("-- %s --\n", nl_name(networkNodes, t));
+	}
+	dijkstra(networkGraph, numNodes, nl_index(networkNodes, myself), dist, prev);
 	free(myself);
 }
 
 /* Updates the nodes struct based on a new connection we received
 */
-void updateNodesFromConn(struct sockaddr_in *addr)
+void updateNodesFromConn(struct sockaddr_in addr)
 {
 	//if our node_list struct has not been initialized, initialize it and add ourselves to it
 	if (networkNodes == NULL)
@@ -248,6 +268,9 @@ void updateNodesFromGossip(char *payload)
 {
 	assert(networkNodes != NULL); //if we received a gossip, then we should have first established a connection
 
+	char *gossipCpy = malloc(strlen(payload) + 2);
+	memcpy(gossipCpy, payload, strlen(payload) + 2);
+
 	//add every addr form the payload to our node list. nl_add won't add it if it already exists in our node list
 	char *payloadNeighborAddr = strtok(payload, ";\n");
 	while (payloadNeighborAddr != NULL)
@@ -255,6 +278,8 @@ void updateNodesFromGossip(char *payload)
 		nl_add(networkNodes, payloadNeighborAddr);
 		payloadNeighborAddr = strtok(NULL, ";\n");
 	}
+
+	free(gossipCpy);
 
 	//recompute the network graph incase there were any new nodes added
 	computeNetworkGraph();
@@ -440,6 +465,88 @@ void hello_received(struct file_info *fi, char *addr_port){
 
 	//flood gossip since we got a new connection
 	flood_gossip();
+
+	//update node list with new connection
+	updateNodesFromConn(addr);
+	printf("end of hello received\n");
+}
+
+/* Receives a message and passes it on if it's not meant for me.
+* If it is meant for us, print it ouf.
+*/
+void send_received(char *line)
+{
+	char *port = index(line, ':');
+	if (port == 0) {
+		fprintf(stderr, "in send recenve: format is S<dst_addr>:<port>/TTL/payload\n");
+		return;
+	}
+	*port++ = 0;
+
+	char *ttl = index(port, '/');
+	if (ttl == 0) {
+		fprintf(stderr, "in send receive: no ttl\n");
+		return;
+	}
+	*ttl++ = 0;
+	long ttl_l = atol(ttl);
+
+	char *payload = index(ttl, '/');
+	if (payload == 0) {
+		fprintf(stderr, "in send receive: no payload\n");
+		return;
+	}
+	*payload++ = 0;
+
+	/* Get the source and message identifier.
+	 */
+	struct sockaddr_in dst_addr;
+	if (addr_get(&dst_addr, line, atoi(port)) < 0) {
+		return;
+	}
+	
+	
+	if (addr_cmp(my_addr, dst_addr) == 0) //if the message is for me, print it out
+	{
+		printf("Received Msg: %s", payload);
+	}
+	else
+	{
+		if (ttl_l < 1)
+		{
+			return; //if the ttl is less than 1 and is msg is not meant for us
+		}
+		else
+		{
+			//decrement the TTL and pass along the message
+			char *dstAddrChar = addr_to_string(dst_addr);
+			ttl_l--;
+			char *pass_msg_along = malloc(strlen(line) + 2);
+			sprintf(pass_msg_along, "S%s/%lu/%s\n", dstAddrChar, ttl_l, payload);
+
+			//pass message along dijkstra's tree
+			int dstNodeIndex = nl_index(networkNodes, dstAddrChar);
+			free(dstAddrChar);
+			int nextNodeIndex = prev[dstNodeIndex];
+			char *nextNodeChar = nl_name(networkNodes, nextNodeIndex);
+
+			struct sockaddr_in nextNode_addr = string_to_addr(nextNodeChar);
+
+			//find fi of the next node to send the message along
+			struct file_info *fi;
+			for (fi = file_info; fi != 0; fi = fi->next) {
+				if (addr_cmp(fi->addr, nextNode_addr) != 0) continue;
+
+				if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
+					file_info_send(fi, pass_msg_along, strlen(pass_msg_along));
+					break;
+				}
+			}
+
+			free(pass_msg_along);
+		}
+	}
+
 }
 
 /* A line of input (a command) is received.  Look at the first character to determine
@@ -457,6 +564,9 @@ static void handle_line(struct file_info *fi, char *line){
 		break;
 	case 'H':
 		hello_received(fi, &line[1]);
+		break;
+	case 'S':
+		send_received(&line[1]);
 		break;
     case 'E':
     case 'e':
@@ -534,6 +644,14 @@ static void message_handler(struct file_info *fi, int events){
 
 		//flood gossip because we lost a neighbor
 		flood_gossip();
+
+		//update network graph with disconnection
+		int numNodes = nl_nsites(networkNodes);
+		char *myAddr = addr_to_string(my_addr);
+		char *dstAddr = addr_to_string(fi->addr);
+		set_dist(networkNodes, networkGraph, numNodes, myAddr, dstAddr, INFINITY);
+		free(myAddr);
+		free(dstAddr);
 
 		return;
 	}
