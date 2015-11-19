@@ -1,6 +1,5 @@
 #include "global.h"
 #include <assert.h>
-#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <arpa/inet.h>
@@ -151,7 +150,8 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 
 	// initialization
 	memset(visitedNodes, 0, nnodes*sizeof(bool)); // initializing each node to false
-	for (int i = 0; i < nnodes; i++)
+	int i;
+	for (i = 0; i < nnodes; i++)
 	{
 		dist[i] = INFINITY;
 		prev[i] = UNDEFINED;
@@ -159,13 +159,15 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 
 	dist[src] = 0; //dist from source node to itself is 0
 
-	for (int count = 0; count < nnodes; count++) //iterate this for every node
+	int count;
+	for (count = 0; count < nnodes; count++) //iterate this for every node
 	{
 		int minDistance = INFINITY;
 		int minIndex = UNDEFINED;
 
 		//find the next unvisited node with the min distance from our src
-		for (int j = 0; j < nnodes; j++)
+		int j;
+		for (j = 0; j < nnodes; j++)
 		{
 			if (!visitedNodes[j] && dist[j] < minDistance)
 			{
@@ -176,7 +178,8 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 
 		visitedNodes[minIndex] = true; //mark this node as visited
 
-		for (int g = 0; g < nnodes; g++) //find all neighbor nodes and update distances if necessary
+		int g;
+		for (g = 0; g < nnodes; g++) //find all neighbor nodes and update distances if necessary
 		{
 			if (visitedNodes[g]) continue; //we've already visited this node
 
@@ -186,6 +189,13 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 				prev[g] = minIndex;
 			}
 		}
+	}
+
+	printf("printing graph\n");
+	int z;
+	for (z = 0; z < nnodes*nnodes; z++)
+	{
+		printf(" %d \n", graph[z]);
 	}
 }
 

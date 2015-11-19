@@ -10,7 +10,7 @@ struct gossip {
 	long counter;
 	char *latest;
 };
-static struct gossip *gossip;
+struct gossip *gossip;
 
 extern struct sockaddr_in my_addr;
 
@@ -83,6 +83,10 @@ void gossip_received(struct file_info *fi, char *line){
 		gossip = g;
 	}
 
+	//update our network graph based on the new gossip
+	printf("let's see what our payload looks like here %s", payload);
+	updateNodesFromGossip(payload);
+
 	/* Restore the line.
 	 */
 	*--port = ':';
@@ -95,10 +99,6 @@ void gossip_received(struct file_info *fi, char *line){
 	g->latest = malloc(len + 1);
 	memcpy(g->latest, line, len + 1);
 	g->counter = counter;
-
-	//update our network graph based on the new gossip
-	printf("let's see what our payload looks like here %s", payload);
-	updateNodesFromGossip(payload);
 
 	/* Send the gossip to all connections except the one it came in on.
 	 */

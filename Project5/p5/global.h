@@ -1,4 +1,6 @@
 #include <arpa/inet.h>
+#include <limits.h>
+
 #define INFINITY		INT_MAX
 
 struct file_info;
