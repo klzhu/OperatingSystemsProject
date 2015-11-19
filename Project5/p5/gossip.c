@@ -83,10 +83,6 @@ void gossip_received(struct file_info *fi, char *line){
 		gossip = g;
 	}
 
-	//update our network graph based on the new gossip
-	printf("let's see what our payload looks like here %s", payload);
-	updateNodesFromGossip(payload);
-
 	/* Restore the line.
 	 */
 	*--port = ':';
@@ -99,6 +95,9 @@ void gossip_received(struct file_info *fi, char *line){
 	g->latest = malloc(len + 1);
 	memcpy(g->latest, line, len + 1);
 	g->counter = counter;
+
+	//update our network graph based on the new gossip
+	updateNodesFromGossip(payload + 1);
 
 	/* Send the gossip to all connections except the one it came in on.
 	 */

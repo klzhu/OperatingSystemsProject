@@ -143,14 +143,14 @@ void flood_gossip()
 	//construct payload
 	struct file_info *fi;
 	for (fi = file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
-		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
+		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED)) {
 			char *neighborAddrChar = addr_to_string(fi->addr);
 			size_t addrLength = strlen(neighborAddrChar);
 			if (capacity - dataSize < addrLength + 1) { //if we don't have room to fit neighborAddrChar (excluding '\0') and ';', resize
 				capacity *= 2;
-				gossipMsg = realloc(gossipMsg, capacity); //double the capacity
+				gossipMsg = realloc(gossipMsg, capacity); // double the capacity
 			}
-			*(gossipMsg + dataSize++) = ';'; // append ';' into payload
+			gossipMsg[dataSize++] = ';'; // append ';' to payload
 			memcpy(gossipMsg + dataSize, neighborAddrChar, addrLength); //append neighborAddrChar excluding ending '\0'
 			dataSize += addrLength;
 			assert(dataSize == strlen(gossipMsg));
@@ -167,7 +167,7 @@ void flood_gossip()
 	gossipMsg[dataSize] = '\0';		// append ending '\0' without increasing dataSize
 	assert(dataSize == strlen(gossipMsg));
 
-	file_broadcast(gossipMsg, strlen(gossipMsg), NULL);
+	file_broadcast(gossipMsg, (int)dataSize, NULL);
 	printf("this is my payload msg %s\n", gossipMsg); //DEBUGGING, remove later
 	gossipCounter++;
 	free(gossipMsg);
@@ -195,6 +195,7 @@ void computeNetworkGraph()
 
 	char *myself = addr_to_string(my_addr);
 	set_dist(networkNodes, networkGraph, numNodes, myself, myself, 0); //set my distance from myself to 0 in the network graph
+
 	struct file_info *fi;
 	for (fi = file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
 		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
@@ -209,16 +210,38 @@ void computeNetworkGraph()
 	for (g = gossip; g != 0; g = gossip_next(g)) {
 		char *gossipSrcAddr = addr_to_string(gossip_src(g));
 		set_dist(networkNodes, networkGraph, numNodes, gossipSrcAddr, gossipSrcAddr, 0); //set gosssipSrc distance from gossipSrc to 0 in the network graph
-		char *gossipCpy = malloc(strlen(gossip_latest(g)) + 2);
-		memcpy(gossipCpy, gossip_latest(g), strlen(gossip_latest(g)) + 2);
-		//char *gossip = gossip_latest(g);
 
-		char *payloadNeighborAddr = strtok(gossipCpy, ";\n");
-		while (payloadNeighborAddr != NULL)
-		{
-			//nl_add(networkNodes, payloadNeighborAddr);
-			set_dist(networkNodes, networkGraph, numNodes, gossipSrcAddr, payloadNeighborAddr, 1);
-			payloadNeighborAddr = strtok(NULL, ";\n");
+		
+		char *gossip = gossip_latest(g);
+
+		// copy input payload since we'll modify the string later
+		size_t len = strlen(gossip);
+		char *gossipCpy = malloc(len + 1);
+		memcpy(gossipCpy, gossip, len + 1);
+		char *frontPtr = gossipCpy;
+		char *endPtr = frontPtr;
+		
+		//set dist btw srcAddr and every neighbor in payload to 1
+		int startIdx = 0;
+		int endIdx = startIdx;
+		while (startIdx < len) {
+			if (gossipCpy[startIdx] == ';')
+			{
+				endIdx = startIdx + 1;
+				while (endIdx < len && gossipCpy[endIdx] != '\n' && gossipCpy[endIdx] != ';') // finding next '\n' or ';'
+					endIdx++; 
+
+				if (endIdx < len && endIdx - startIdx >= 9) { // if found '\n' and the string between them is long enough
+					// replace a char with '\0' to end the current token properly to form a char string
+					gossipCpy[endIdx] = '\0'; 
+					set_dist(networkNodes, networkGraph, numNodes, gossipSrcAddr, gossipCpy + startIdx, 1); 
+					startIdx = endIdx + 1;
+				}
+
+				startIdx = endIdx;
+				endIdx = startIdx;
+			}
+			startIdx++;
 		}
 
 		free(gossipCpy);
@@ -245,7 +268,7 @@ void updateNodesFromConn(struct sockaddr_in addr)
 		networkNodes = nl_create();
 		if (networkNodes == NULL)
 		{
-			fprintf(stderr, "failure in computeNetworkGraph()\n");
+			fprintf(stderr, "failure in updateNodesFromConn()\n");
 			return;
 		}
 		char *myAddrChar = addr_to_string(my_addr);
@@ -268,15 +291,27 @@ void updateNodesFromGossip(char *payload)
 {
 	assert(networkNodes != NULL); //if we received a gossip, then we should have first established a connection
 
-	char *gossipCpy = malloc(strlen(payload) + 2);
-	memcpy(gossipCpy, payload, strlen(payload) + 2);
+	// copy input payload since we'll modify the string later
+	size_t len = strlen(payload);
+	char *gossipCpy = malloc(len + 1);
+	memcpy(gossipCpy, payload, len + 1);
 
 	//add every addr form the payload to our node list. nl_add won't add it if it already exists in our node list
-	char *payloadNeighborAddr = strtok(payload, ";\n");
-	while (payloadNeighborAddr != NULL)
-	{
-		nl_add(networkNodes, payloadNeighborAddr);
-		payloadNeighborAddr = strtok(NULL, ";\n");
+	int startIdx = 0;
+	int endIdx = startIdx;
+	while (startIdx < len) {
+		while (endIdx < len && gossipCpy[endIdx] != '\n' && gossipCpy[endIdx] != ';') // finding next '\n' or ';'
+			endIdx++; 
+
+		if (endIdx < len && endIdx - startIdx >= 9) { // if found '\n' and the string between them is long enough
+			// replace a char with '\0' to end the current token properly to form a char string
+			gossipCpy[endIdx] = '\0'; 
+			nl_add(networkNodes, gossipCpy + startIdx);
+			startIdx = endIdx + 1;
+		}
+
+		startIdx = endIdx + 1;
+		endIdx = startIdx;
 	}
 
 	free(gossipCpy);
@@ -468,14 +503,14 @@ void hello_received(struct file_info *fi, char *addr_port){
 
 	//update node list with new connection
 	updateNodesFromConn(addr);
-	printf("end of hello received\n");
 }
 
 /* Receives a message and passes it on if it's not meant for me.
-* If it is meant for us, print it ouf.
+* If it is meant for us, print it out.
 */
 void send_received(char *line)
 {
+	printf("this is the message received: %s\n", line);
 	char *port = index(line, ':');
 	if (port == 0) {
 		fprintf(stderr, "in send recenve: format is S<dst_addr>:<port>/TTL/payload\n");
@@ -504,8 +539,7 @@ void send_received(char *line)
 	if (addr_get(&dst_addr, line, atoi(port)) < 0) {
 		return;
 	}
-	
-	
+
 	if (addr_cmp(my_addr, dst_addr) == 0) //if the message is for me, print it out
 	{
 		printf("Received Msg: %s", payload);
@@ -537,10 +571,11 @@ void send_received(char *line)
 			for (fi = file_info; fi != 0; fi = fi->next) {
 				if (addr_cmp(fi->addr, nextNode_addr) != 0) continue;
 
-				if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
+				//if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
+					printf("checkpt2\n");
 					file_info_send(fi, pass_msg_along, strlen(pass_msg_along));
 					break;
-				}
+				//}
 			}
 
 			free(pass_msg_along);
@@ -650,6 +685,7 @@ static void message_handler(struct file_info *fi, int events){
 		char *myAddr = addr_to_string(my_addr);
 		char *dstAddr = addr_to_string(fi->addr);
 		set_dist(networkNodes, networkGraph, numNodes, myAddr, dstAddr, INFINITY);
+		set_dist(networkNodes, networkGraph, numNodes, dstAddr, myAddr, INFINITY);
 		free(myAddr);
 		free(dstAddr);
 
