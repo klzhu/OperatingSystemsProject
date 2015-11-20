@@ -10,9 +10,7 @@ struct gossip {
 	long counter;
 	char *latest;
 };
-struct gossip *gossip;
-
-extern struct sockaddr_in my_addr;
+struct gossip *g_gossips;
 
 struct gossip* gossip_next(struct gossip* gossip) {
     return gossip->next;
@@ -65,7 +63,7 @@ void gossip_received(struct file_info *fi, char *line){
 	/* See if we already have this gossip.
 	 */
 	struct gossip *g;
-	for (g = gossip; g != 0; g = g->next) {
+	for (g = g_gossips; g != 0; g = g->next) {
 		if (addr_cmp(g->src, addr) != 0) {
 			continue;
 		}
@@ -76,18 +74,19 @@ void gossip_received(struct file_info *fi, char *line){
 		free(g->latest);
 		break;
 	}
+
 	if (g == 0) {
 		g = calloc(1, sizeof(*g));
 		g->src = addr;
-		g->next = gossip;
-		gossip = g;
+		g->next = g_gossips;
+		g_gossips = g;
 	}
 
 	/* Restore the line.
 	 */
-	*--port = ':';
-	*--ctr = '/';
-	*--payload = '/';
+	*--port = ':';			// port points to ':'
+	*(ctr - 1) = '/';		// ctr still points to the first char of counter
+	*(payload - 1) = '/';	// payload still points to the first char in the payload
 
 	/* Save the gossip.
 	 */
@@ -96,14 +95,15 @@ void gossip_received(struct file_info *fi, char *line){
 	memcpy(g->latest, line, len + 1);
 	g->counter = counter;
 
-	//this is a new message if not returned yet, update our network graph
-	updateFromGossip(addr, payload);
-
 	/* Send the gossip to all connections except the one it came in on.
 	 */
 	char *msg = malloc(len + 3);
 	sprintf(msg, "G%s\n", g->latest);
 	file_broadcast(msg, len + 2, fi);
+
+	msg[ctr - line] = '\0'; // make msg + 1 to represet addr as a char string 
+	update_from_gossip(&msg[1], payload); // update network graph with this new gossip 
+
 	free(msg);
 }
 
@@ -111,8 +111,7 @@ void gossip_received(struct file_info *fi, char *line){
  */
 void gossip_to_peer(struct file_info *fi){
 	struct gossip *g;
-
-	for (g = gossip; g != 0; g = g->next) {
+	for (g = g_gossips; g != 0; g = g->next) {
 		file_info_send(fi, "G", 1);
 		file_info_send(fi, g->latest, strlen(g->latest));
 		file_info_send(fi, "\n", 1);

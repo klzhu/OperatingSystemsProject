@@ -184,10 +184,7 @@ struct sockaddr_in* string_to_addr(char* string) {
  * last hop from src to x.
  */
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
-	bool settledNodes[nnodes]; // if a node has been settled for shortest distance?
-
-	// initialization
-	memset(settledNodes, 0, nnodes*sizeof(bool)); // initializing each node to false
+	bool *settledNodes = calloc(nnodes, sizeof(bool)); // if a node has been settled for shortest distance? Init to false (0).
 	int i;
 	for (i = 0; i < nnodes; i++) 
 	{
@@ -227,10 +224,6 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 			}
 		}
 	}
-	printf("printing graph\n");
-	int z;
-	for (z = 0; z < nnodes*nnodes; z++)
-	{
-		printf(" %d \n", graph[z]);
-	}
+
+	free(settledNodes);
 }

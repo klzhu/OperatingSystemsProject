@@ -51,4 +51,4 @@ struct sockaddr_in* string_to_addr(char* string);
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]);
 
 // functions from connect.c
-void updateFromGossip(struct sockaddr_in srcAddr, char *payload);
+void update_from_gossip(char *srcAddrChar, char *payload);
