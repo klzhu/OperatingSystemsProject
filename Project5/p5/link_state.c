@@ -6,9 +6,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define INFINITY					INT_MAX
-#define UNDEFINED					(-1)
-#define INDEX(x, y, nnodes)			((x) + (nnodes) * (y))
+
 // The following returns if nodes x and y are connected neighbors or not. We assume that every pair of nodes are 
 // initialized to distance INFINITY, and x and y are connected neighors iff dist(x, y) != INFINITY and dist(y, x) != INFINITY
 #define CONNECTED_NEIGHBORS(graph, x, y, nnodes)	((graph)[INDEX((x), (y), (nnodes))] != INFINITY && (graph)[INDEX((y), (x), (nnodes))] != INFINITY)
@@ -53,10 +51,49 @@ int nl_compare(const void *e1, const void *e2){
 	return strcmp(*p1, *p2);
 }
 
-void nl_sort(struct node_list *nl)
-{	qsort(nl->nodes, nl->nnodes, sizeof(char *), nl_compare);
+void nl_sort(struct node_list *nl){
+	qsort(nl->nodes, nl->nnodes, sizeof(char *), nl_compare);
 	nl->unsorted = 0;
 }
+
+struct localItem {
+	char *node;
+	int origIndex;
+};
+
+// compare two items of type struct localItem using their nodes
+int nl_compare_with_indexes(const void *e1, const void *e2){
+	const struct localItem *p1 = (const struct localItem *)e1;
+	const struct localItem *p2 = (const struct localItem *)e2;
+	return strcmp(p1->node, p2->node);
+}
+
+// Outputs # of nodes in outSize and returns the indexes of the following 
+// relationship: oldIndex = outIndexes[newIndex]
+int* nl_sort_output_indexes(struct node_list *nl, int *outSize){
+	struct localItem *items = malloc(nl->nnodes * sizeof(struct localItem));
+		
+	int k;
+	for (k = 0; k < nl->nnodes; k++) { // init items
+		items[k].node = nl->nodes[k];
+		items[k].origIndex = k;
+	}
+
+	qsort(items, nl->nnodes, sizeof(struct localItem), nl_compare_with_indexes); // sort items
+
+	// apply sorting results
+	int *outIndexes = malloc(nl->nnodes * sizeof(int));
+	for (k = 0; k < nl->nnodes; k++) { 
+		nl->nodes[k] = items[k].node;
+		outIndexes[k] = items[k].origIndex;
+	}
+	
+	nl->unsorted = 0;
+	free(items);
+	*outSize = nl->nnodes;
+	return outIndexes;
+}
+
 
 /* Return the rank of the given site in the given site list.
  */
@@ -128,32 +165,31 @@ char* addr_to_string (struct sockaddr_in addr) {
     return addr_string;
 }
 
-struct sockaddr_in string_to_addr(char* string) {
+struct sockaddr_in* string_to_addr(char* string) {
     char *port = index(string, ':');  
     *port++ = 0;
     struct sockaddr_in* addr = calloc(1, sizeof(struct sockaddr_in));
     addr_get(addr, string, atoi(port));
     *--port = ':';
-    return *addr;
+    return addr;
 }
 
 
 /*************************************************
 	Dijkstra's algorithm
-*************************************************/
-
-/* Dijkstra's algorith.  graph[INDEX(x, y, nnodes)] contains the distance of
+ *************************************************
+ *  Dijkstra's algorith.  graph[INDEX(x, y, nnodes)] contains the distance of
  * node x to node y.  nnodes is the number of nodes.  src is that starting node.
  * Output dist[x] gives the distance from src to x.  Output prev[x] gives the
  * last hop from src to x.
  */
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
-	bool visitedNodes[nnodes]; // tracks if node has been visited
+	bool settledNodes[nnodes]; // if a node has been settled for shortest distance?
 
 	// initialization
-	memset(visitedNodes, 0, nnodes*sizeof(bool)); // initializing each node to false
+	memset(settledNodes, 0, nnodes*sizeof(bool)); // initializing each node to false
 	int i;
-	for (i = 0; i < nnodes; i++)
+	for (i = 0; i < nnodes; i++) 
 	{
 		dist[i] = INFINITY;
 		prev[i] = UNDEFINED;
@@ -162,37 +198,35 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 	dist[src] = 0; //dist from source node to itself is 0
 
 	int count;
-	for (count = 0; count < nnodes; count++) //iterate this for every node
+	for (count = 0; count < nnodes; count++) //iterate every node
 	{
+		//find unsettled node with min distance from src
 		int minDistance = INFINITY;
 		int minIndex = UNDEFINED;
 
-		//find the next unvisited node with the min distance from our src
 		int j;
 		for (j = 0; j < nnodes; j++)
 		{
-			if (!visitedNodes[j] && dist[j] < minDistance)
+			if (!settledNodes[j] && dist[j] < minDistance)
 			{
 				minDistance = dist[j];
 				minIndex = j;
 			}
 		}
 
-		visitedNodes[minIndex] = true; //mark this node as visited
+		settledNodes[minIndex] = true; //mark this node as visited
 
-		int g;
-		for (g = 0; g < nnodes; g++) //find all neighbor nodes and update distances if necessary
+		for (j = 0; j < nnodes; j++) //find all unsettled neighbor nodes and update distances if necessary
 		{
-			if (visitedNodes[g]) continue; //we've already visited this node
+			if (settledNodes[j]) continue;
 
-			if (CONNECTED_NEIGHBORS(graph, minIndex, g, nnodes) && dist[g] > (graph[INDEX(minIndex, g, nnodes)] + minDistance))
+			if (CONNECTED_NEIGHBORS(graph, minIndex, j, nnodes) && dist[j] > graph[INDEX(minIndex, j, nnodes)] + minDistance)
 			{
-				dist[g] = graph[INDEX(minIndex, g, nnodes)] + minDistance;
-				prev[g] = minIndex;
+				dist[j] = graph[INDEX(minIndex, j, nnodes)] + minDistance;
+				prev[j] = minIndex;
 			}
 		}
 	}
-
 	printf("printing graph\n");
 	int z;
 	for (z = 0; z < nnodes*nnodes; z++)
@@ -200,4 +234,3 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 		printf(" %d \n", graph[z]);
 	}
 }
-

@@ -2,11 +2,18 @@
 #include <limits.h>
 
 #define INFINITY		INT_MAX
+#define UNDEFINED					(-1)
+#define INDEX(x, y, nnodes)			((x) + (nnodes) * (y))
+
+double timer_now(void);
+void timer_start(double when, void (*handler)(void *arg), void *arg);
+int timer_check(void);
 
 struct file_info;
 struct sockaddr_in;
 struct gossip;
 struct node_list;
+struct timer;
 
 void gossip_to_peer(struct file_info *fi);
 void gossip_received(struct file_info *fi, char *line);
@@ -23,6 +30,7 @@ double timer_now(void); // Return current time
 void timer_start(double when, void(*handler)(void *arg), void *arg); // Set a timer
 int timer_check(void); //Check if any timers expired
 
+
 // functions from addr.c
 int addr_get(struct sockaddr_in *sin, const char *addr, int port);
 int addr_cmp(struct sockaddr_in a1, struct sockaddr_in a2);
@@ -33,10 +41,14 @@ int nl_nsites(struct node_list *nl);
 void nl_add(struct node_list *nl, char *node);
 int nl_compare(const void *e1, const void *e2);
 void nl_sort(struct node_list *nl);
+int* nl_sort_output_indexes(struct node_list *nl, int *outSize);
 int nl_index(struct node_list *nl, char *node);
 char *nl_name(struct node_list *nl, int index);
 void nl_destroy(struct node_list *nl);
 void set_dist(struct node_list *nl, int graph[], int nnodes, char *src, char *dst, int dist);
 char* addr_to_string(struct sockaddr_in addr);
-struct sockaddr_in string_to_addr(char* string);
+struct sockaddr_in* string_to_addr(char* string);
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]);
+
+// functions from connect.c
+void updateFromGossip(struct sockaddr_in srcAddr, char *payload);

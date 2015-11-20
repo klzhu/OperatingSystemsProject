@@ -25,6 +25,7 @@ int addr_cmp(struct sockaddr_in a1, struct sockaddr_in a2){
 int addr_get(struct sockaddr_in *sin, const char *addr, int port){
 	struct hostent *h;
 
+	printf("this is our char and port %s %d", addr, port);
 	memset(sin, 0, sizeof(*sin));
 	sin->sin_family = AF_INET;
 	sin->sin_port = htons(port);

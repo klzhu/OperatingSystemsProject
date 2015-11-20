@@ -96,8 +96,8 @@ void gossip_received(struct file_info *fi, char *line){
 	memcpy(g->latest, line, len + 1);
 	g->counter = counter;
 
-	//update our network graph based on the new gossip
-	updateNodesFromGossip(payload + 1);
+	//this is a new message if not returned yet, update our network graph
+	updateFromGossip(addr, payload);
 
 	/* Send the gossip to all connections except the one it came in on.
 	 */
