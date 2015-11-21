@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "global.h"
 
 struct gossip {
@@ -10,7 +11,8 @@ struct gossip {
 	long counter;
 	char *latest;
 };
-struct gossip *g_gossips;
+
+struct gossip *g_gossips = NULL;
 
 struct gossip* gossip_next(struct gossip* gossip) {
     return gossip->next;
@@ -103,6 +105,7 @@ void gossip_received(struct file_info *fi, char *line){
 
 	msg[ctr - line] = '\0'; // make msg + 1 to represet addr as a char string 
 	update_from_gossip(&msg[1], payload); // update network graph with this new gossip 
+	update_shortest_distances(); // call Dijkstra's algorithm to update distances
 
 	free(msg);
 }

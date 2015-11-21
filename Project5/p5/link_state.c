@@ -145,13 +145,10 @@ void nl_destroy(struct node_list *nl){
 void set_dist(struct node_list *nl, int graph[], int nnodes, char *src, char *dst, int dist){
 	int x = nl_index(nl, src), y = nl_index(nl, dst);
 	if (x < 0 || y < 0) {
-		printf("this is the src: %s\n", src);
-		printf("this is the dst: %s,\n", dst);
 		fprintf(stderr, "set_dist: bad source or destination\n");
 		return;
 	}
 	graph[INDEX(x, y, nnodes)] = dist;
-	//graph[INDEX(y, x, nnodes)] = dist;
 }
 
 char* addr_to_string (struct sockaddr_in addr) {
@@ -174,6 +171,10 @@ struct sockaddr_in* string_to_addr(char* string) {
     return addr;
 }
 
+char **nl_get_nodes(struct node_list *nl)
+{
+	return nl->nodes;
+}
 
 /*************************************************
 	Dijkstra's algorithm
@@ -211,6 +212,8 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 			}
 		}
 
+		if (minIndex < 0) break; // no more connections
+
 		settledNodes[minIndex] = true; //mark this node as visited
 
 		for (j = 0; j < nnodes; j++) //find all unsettled neighbor nodes and update distances if necessary
@@ -227,3 +230,4 @@ void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]){
 
 	free(settledNodes);
 }
+
