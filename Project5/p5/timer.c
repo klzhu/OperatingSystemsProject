@@ -14,7 +14,6 @@ static struct timer *timers;
  */
 double timer_now(void){
     struct timeval now;
-	double time;
 
     gettimeofday(&now, 0);
 	return now.tv_sec + (double) now.tv_usec / 1000000;

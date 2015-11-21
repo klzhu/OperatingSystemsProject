@@ -47,16 +47,16 @@ struct file_info {
 };
 
 // --------   global variables   ----------
-struct file_info *g_file_info;
+struct file_info *g_file_info = NULL;
 int g_nfiles;
 char *g_uid_gen = (char *) 1;
 
 //gossip counter
 unsigned long g_gossipCounter = 0;
-struct gossip *g_gossip;
+extern struct gossip *g_gossips;
 
 struct network_topology {
-	struct node_list *nodes;
+	struct node_list *nodeList;
 	int *graph;
 
 	int *dist;	// distances from my node to other nodes
@@ -140,20 +140,31 @@ void file_broadcast(char *buf, int size, struct file_info *fi){
 	}
 }
 
-/* Creates a gossip message and floods it with file_broadcast
+/* Creates a gossip message and floods it with file_broadcast and also update my direct
+ * connected neighbor nodes in the network topology's graph. 
 */
 void flood_gossip()
 {
+	// reset my neighbor nodes. We'll restablish here
+	int numNodes = add_node_update_graph(g_my_addr_char, true);
+
 	size_t capacity = 256;
 	char *gossipMsg = malloc(capacity);
 	sprintf(gossipMsg, "G%s/%lu/", g_my_addr_char, g_gossipCounter);
 	size_t dataLength = strlen(gossipMsg); //# of bytes used excluding '\0' for now
 
-	//construct payload
+	//construct payload by including all of my direct connected neighbor nodes 
 	struct file_info *fi;
 	for (fi = g_file_info; fi != 0; fi = fi->next) { //construct our payload and append it to gossipMsg
 		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED)) {
 			char *neighborAddrChar = addr_to_string(fi->addr);
+
+			// Add the neighbor node to network's topology if not yet, and don't touch its distances 
+			// if the node is already in the list
+			numNodes = add_node_update_graph(neighborAddrChar, false); 
+			// set distance from me to this neighbor node to 1
+			set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, g_my_addr_char, neighborAddrChar, 1);
+
 			size_t addrLength = strlen(neighborAddrChar);
 			if (capacity - dataLength < addrLength + 1) { //if we don't have room to fit neighborAddrChar (excluding '\0') and ';', resize
 				capacity *= 2;
@@ -180,30 +191,141 @@ void flood_gossip()
 	printf("this is my payload msg %s\n", gossipMsg); //DEBUGGING, remove later
 	g_gossipCounter++;
 	free(gossipMsg);
+
+	update_shortest_distances(); // Call Dijkstra's algorithm to update distances
 }
 
-/* Creates a new network graph
-*/
-int *create_network_graph(struct node_list *ndList, char *myself, struct file_info *fileInfo, struct gossip *gs)
-{
-	int numNodes = nl_nsites(ndList); //get the number of nodes we have
-	int k = numNodes * numNodes;
-	int *graph = malloc(k * sizeof(int));
-	while (k--) graph[k] = INFINITY; // Initialize all distances to INFINITY
 
-	// my direct connection
+/* Adds node to g_net_topology's node list (non-empty) if it is not there yet and updates its network 
+ * graph if needed. If node is new, all distances from and to the node are set to INF. If the node is
+ * and old one, distances from the node to other nodes are set to INF is reset is true, and not touched 
+ * if reset is false. 
+ * The number of nodes in the resulting node list is returned.
+*/
+int add_node_update_graph(char *node, bool reset)
+{
+	int k, j, numNodes;
+	if (nl_index(g_net_topology.nodeList, node) == -1) { // if  node is not in the list
+		nl_add(g_net_topology.nodeList, node);	// append node to nodeList
+		int *indexMap = nl_sort_output_indexes(g_net_topology.nodeList, &numNodes);
+		int *newGraph = malloc(numNodes * numNodes * sizeof(int));
+		int numNodes_old = numNodes - 1; // # of nodes in the node list before the input node was inserted
+
+		// copy old graph's distances to new graph's distance and 
+		// set distances to/from the new node to INFINITY
+		for (k = 0; k < numNodes; k++) {
+			if (indexMap[k] == numNodes - 1) {	// if k is the input node
+				for (j = 0; j < numNodes; j++)	// set distance from k to others to INF
+					newGraph[INDEX(k, j, numNodes)] = INFINITY;
+			} else { // k is an old node
+				int old_k = indexMap[k]; // k's index in the old graph
+				for (j = 0; j < numNodes; j++) {
+					if (indexMap[j] == numNodes - 1) // if j is the input node
+						newGraph[INDEX(k, j, numNodes)] = INFINITY;
+					else // copy distance from old graph to new graph
+						newGraph[INDEX(k, j, numNodes)] = g_net_topology.graph[INDEX(old_k, indexMap[j], numNodes_old)];
+				}
+			}
+		}
+
+		free(g_net_topology.graph);
+		g_net_topology.graph = newGraph;
+		free(indexMap);
+	} else if (reset) { // if the node is in the list and reset is true, reset node's distnace to others to INF
+		int nodeIdx = nl_index(g_net_topology.nodeList, node); // the index of the node in the node list & graph
+		numNodes = nl_nsites(g_net_topology.nodeList);
+		for (k = 0; k < numNodes; k++)
+			g_net_topology.graph[INDEX(nodeIdx, k, numNodes)] = INFINITY;
+	}
+
+	return numNodes;
+}
+
+/* Updates the nodes and graph based on a new gossip we received. 
+ * It retunrs true if graph is modified, or false if not.
+*/
+void update_from_gossip(char *srcAddrChar, char *payload)
+{
+	// add src node to the network topology if it is not in it yet 
+	// if src is in the node list, reset dists from it to others to INF
+	int numNodes = add_node_update_graph(srcAddrChar, true); 
+
+	//add every node in the payload to network topology if not yet, and update distance from src node
+	int startIdx = 0;
+	if (payload[startIdx] == ';') startIdx++; //skip the first ';' in payload if it presents
+	int endIdx = startIdx;
+	size_t len = strlen(payload);
+	while (startIdx < len) {
+		// Note that '\n' have been removed by function add_input()
+		while (endIdx < len && payload[endIdx] != ';') // finding next ';' or at end of string
+			endIdx++;
+
+		if (endIdx - startIdx >= 9) { // if at least 9 bytes for "#.#.#.#:port" where "#" and "port" each at least 1 byte
+			char origChar = payload[endIdx];  // save the char for restore it later
+			payload[endIdx] = '\0'; // replace it with '\0' to end current token properly as a char string
+
+			// Add curr node to network's topology if not yet, and don't touch 
+			// its distances if the node is already in the list
+			numNodes = add_node_update_graph(payload + startIdx, false); 
+			// set distance from src node to this node to 1
+			set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, srcAddrChar, payload + startIdx, 1);
+
+			payload[endIdx] = origChar; // restore payload
+		}
+
+		startIdx = endIdx + 1;
+		endIdx = startIdx;
+	}
+}
+
+void update_shortest_distances()
+{
+	int numNodes = nl_nsites(g_net_topology.nodeList);
+	if (g_net_topology.distSize != numNodes) {
+		free(g_net_topology.dist);
+		g_net_topology.dist = (int*)malloc(2 * numNodes * sizeof(int)); // allocate memory for both dist and prev
+		g_net_topology.prev = g_net_topology.dist + numNodes;	// prev takes the 2nd half
+		g_net_topology.distSize = numNodes;
+	}
+
+	dijkstra(g_net_topology.graph, numNodes, nl_index(g_net_topology.nodeList, g_my_addr_char),
+		g_net_topology.dist, g_net_topology.prev);
+}
+
+/* Creates a new network graph for g_net_topology.
+ * It does NOT call Dijkstra's algorithm to update distances
+*/
+void create_network_graph(char *newNeighborAddr)
+{
+	nl_add(g_net_topology.nodeList, g_my_addr_char);	// add myself to the list of nodes
+	nl_add(g_net_topology.nodeList, newNeighborAddr);	// add new neighbor to the list of nodes
+
+	// find all my direct connection neigbor nodes and add to g_net_topology's node list if not yet
 	struct file_info *fi;
-	for (fi = fileInfo; fi != 0; fi = fi->next) {
+	for (fi = g_file_info; fi != 0; fi = fi->next) {
 		if (fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) {
 			char *neighborAddr = addr_to_string(fi->addr);
-			//set me and my neighbors are connected with a distance of 1 (hop)
-			set_dist(ndList, graph, numNodes, myself, neighborAddr, 1);
-			set_dist(ndList, graph, numNodes, neighborAddr, myself, 1);
+			nl_add(g_net_topology.nodeList, neighborAddr);	// add to ndList if not yet
 			free(neighborAddr);
 		}
 	}
 
+	int numNodes = nl_nsites(g_net_topology.nodeList); //get the number of nodes we have
+	int k = numNodes * numNodes;
+	g_net_topology.graph = malloc(k * sizeof(int));
+	while (k--) g_net_topology.graph[k] = INFINITY; // Initialize all distances to INFINITY
+
+	// set distance bettwen me and my direction connected neighbor nodes
+	char **nodes = nl_get_nodes(g_net_topology.nodeList);
+	for (k = 0; k < numNodes; k++) {
+		if (strcmp(nodes[k], g_my_addr_char) != 0) { // if not me
+			set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, g_my_addr_char, nodes[k], 1);
+			set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, nodes[k], g_my_addr_char, 1);
+		}
+	}
+
 	//set distances for other neighbors in the graph based on gossips
+	struct gossip *gs = g_gossips;
 	while (gs != 0) {
 		char *gossipSrcAddr = addr_to_string(gossip_src(gs));
 		char *msg = gossip_latest(gs);
@@ -219,74 +341,11 @@ int *create_network_graph(struct node_list *ndList, char *myself, struct file_in
 		if (startIdx >= len) continue; // do nothing if there is no payload
 
 		if (msg[startIdx] == ';') startIdx++; //skip the first ';' in payload if it presents
-
-		//set dist btw srcAddr and every neighbor in payload to 1
-		int endIdx = startIdx;
-		while (startIdx < len) {
-			// Note that '\n' have been removed by function add_input()
-			while (endIdx < len && msg[endIdx] != ';') // finding next ';' or at end of string
-				endIdx++;
-
-			if (endIdx - startIdx >= 9) { // if at least 9 bytes for "#.#.#.#:port" where "#" and "port" each at least 1 byte
-				char origChar = msg[endIdx];
-				msg[endIdx] = '\0'; // replace it with '\0' to end current token properly as a char string
-				set_dist(ndList, graph, numNodes, gossipSrcAddr, msg + startIdx, 1);
-				msg[endIdx] = origChar; // restore the modified char
-			}
-
-			startIdx = endIdx + 1;
-			endIdx = startIdx;
-		}
+		update_from_gossip(gossipSrcAddr, msg + startIdx);
 
 		free(gossipSrcAddr);
 		gs = gossip_next(gs);
 	}
-
-	return graph;
-}
-
-
-/* Adds a node to a nonempty node list and updates its network graph that preserves
- * all old distances and sets all distances to and from the new node to INFINITY
- * At input, ndList and graph are of the old, and at output, they are both of the updated.
- * # of nodes is returned, and *graphModified indicates if graph is modified or not in the function.
-*/
-int add_node_update_graph(struct node_list **ndList, char *node, int **graph, bool *graphModified)
-{
-	*graphModified = false;
-
-	if (nl_index(*ndList, node) == -1) { // if the node is not in the nost list yet
-		// if not returned yet, the node is new
-		nl_add(*ndList, node);	// append node to ndList
-		int numNodes; // # of nodes including the new node
-		int *indexMap = nl_sort_output_indexes(*ndList, &numNodes);
-
-		int *newGraph = malloc(numNodes * numNodes * sizeof(int));
-
-		// copy old graph's distances to new graph's distance and 
-		// set distances to/from new node to INFINITY
-		int k, j;
-		for (k = 0; k < numNodes; k++) {
-			if (indexMap[k] == numNodes - 1) { // if k is the new node
-				for (j = 0; j < numNodes; j++)
-					newGraph[INDEX(k, j, numNodes)] = INFINITY;
-			} else {
-				for (j = 0; j < numNodes; j++) {
-					if (indexMap[j] == numNodes - 1) // if j is the new node
-						newGraph[INDEX(k, j, numNodes)] = INFINITY;
-					else // copy distance from old graph to new graph
-						newGraph[INDEX(k, j, numNodes)] = *graph[INDEX(indexMap[k], indexMap[j], numNodes)];
-				}
-			}
-		}
-
-		free(indexMap);
-		free(*graph);
-		*graph = newGraph;
-		*graphModified = true;
-	}
-
-	return nl_nsites(*ndList);
 }
 
 
@@ -295,101 +354,25 @@ int add_node_update_graph(struct node_list **ndList, char *node, int **graph, bo
 void update_with_new_neighbor(struct sockaddr_in addr)
 {
 	char *newNeighborAddr = addr_to_string(addr);
-	int numNodes = 0;
-	bool modified = true;	// is graph modified?
 
 	//if our node_list struct has not been initialized, initialize it and add ourselves to it
-	if (g_net_topology.nodes == NULL) {
-		g_net_topology.nodes = nl_create();
-		if (g_net_topology.nodes == NULL)
+	if (g_net_topology.nodeList == NULL) {
+		g_net_topology.nodeList = nl_create();
+		if (g_net_topology.nodeList == NULL)
 		{
 			fprintf(stderr, "failure in update_with_new_neighbor()\n");
 			return;
 		}
 		
-		nl_add(g_net_topology.nodes, g_my_addr_char);		//add myself to the list of nodes
-		nl_add(g_net_topology.nodes, newNeighborAddr);	// add new neighbor to the list of nodes
-
-		// create a graph
-		g_net_topology.graph = create_network_graph(g_net_topology.nodes, g_my_addr_char, g_file_info, g_gossip);
-		numNodes = nl_nsites(g_net_topology.nodes);
+		create_network_graph(newNeighborAddr); // create a graph for g_net_topology
 	} else {
-		numNodes = add_node_update_graph(&g_net_topology.nodes, newNeighborAddr, &g_net_topology.graph, &modified);
-		set_dist(g_net_topology.nodes, g_net_topology.graph, numNodes, g_my_addr_char, newNeighborAddr, 1);
-		set_dist(g_net_topology.nodes, g_net_topology.graph, numNodes, newNeighborAddr, g_my_addr_char, 1);
-	}
-
-	if (modified) {
-		if (g_net_topology.dist != NULL)  free(g_net_topology.dist);
-		g_net_topology.distSize = numNodes;
-		g_net_topology.dist = (int*)malloc(2 * numNodes * sizeof(int)); // allocate memory for both dist and prev
-		g_net_topology.prev = g_net_topology.dist + numNodes;	// prev takes the 2nd half
-
-		dijkstra(g_net_topology.graph, numNodes, nl_index(g_net_topology.nodes, g_my_addr_char),
-				g_net_topology.dist, g_net_topology.prev);
+		int numNodes = add_node_update_graph(newNeighborAddr, false); // add addr to the node list without reseting its neighborhood
+		set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, g_my_addr_char, newNeighborAddr, 1);
+		set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, newNeighborAddr, g_my_addr_char, 1);
 	}
 
 	free(newNeighborAddr);
-}
-
-/* Updates the nodes and graph based on a new gossip we received
-*/
-void update_from_gossip(char *srcAddrChar, char *payload)
-{
-	bool modified = false; // is graph modified?
-
-	// add src node to the network topology if it is not in it yet 
-	int numNodes = add_node_update_graph(&g_net_topology.nodes, srcAddrChar, &g_net_topology.graph, &modified);
-
-	int srcAddrIdx = nl_index(g_net_topology.nodes, srcAddrChar); // index of the source node
-	size_t len = strlen(payload);
-
-	//add every node in the payload to network topology if not yet, and update distance from src node
-	int startIdx = 0;
-	if (payload[startIdx] == ';') startIdx++; //skip the first ';' in payload if it presents
-	int endIdx = startIdx;
-	while (startIdx < len) {
-		// Note that '\n' have been removed by function add_input()
-		while (endIdx < len && payload[endIdx] != ';') // finding next ';' or at end of string
-			endIdx++; 
-
-		if (endIdx - startIdx >= 9) { // if at least 9 bytes for "#.#.#.#:port" where "#" and "port" each at least 1 byte
-			char origChar = payload[endIdx];  // save the char for restore it later
-			payload[endIdx] = '\0'; // replace it with '\0' to end current token properly as a char string
-
-			// add curr node to topology if not yet
-			bool currMod;
-			numNodes = add_node_update_graph(&g_net_topology.nodes, payload + startIdx, &g_net_topology.graph, &currMod); 
-			
-			if (modified || currMod) {
-				modified = true;
-				set_dist(g_net_topology.nodes, g_net_topology.graph, numNodes, srcAddrChar, payload + startIdx, 1); // set dist from src to curr node
-			} else { // check if dist from src to curr node in the graph is 1 or not 
-				int currAddrIdx = nl_index(g_net_topology.nodes, payload + startIdx); // index of the current node
-				if (g_net_topology.graph[INDEX(srcAddrIdx, currAddrIdx, numNodes)] != 1) {
-					modified = true;
-					set_dist(g_net_topology.nodes, g_net_topology.graph, numNodes, srcAddrChar, payload + startIdx, 1); // set dist from src to curr node
-				}
-			}
-
-			payload[endIdx] = origChar; // restore payload
-		}
-
-		startIdx = endIdx + 1;
-		endIdx = startIdx;
-	}
-
-	if (modified) { // if modified, call Dijkstra's algorithm to update toppology's dist and prev
-		if (g_net_topology.distSize != numNodes) {
-			free(g_net_topology.dist);
-			g_net_topology.dist = (int*)malloc(2 * numNodes * sizeof(int)); // allocate memory for both dist and prev
-			g_net_topology.prev = g_net_topology.dist + numNodes;	// prev takes the 2nd half
-			g_net_topology.distSize = numNodes;
-		}
-
-		dijkstra(g_net_topology.graph, numNodes, nl_index(g_net_topology.nodes, g_my_addr_char), 
-					g_net_topology.dist, g_net_topology.prev);
-	}
+	update_shortest_distances();
 }
 
 
@@ -570,106 +553,113 @@ void hello_received(struct file_info *fi, char *addr_port){
 	fi->addr = addr;
 	fi->status = FI_KNOWN;
 
-	//flood gossip since we got a new connection
-	flood_gossip();
-
 	//update node list with new connection
 	update_with_new_neighbor(addr);
+
+	//flood gossip since we got a new connection
+	flood_gossip();
 }
 
 /* Receives a message and passes it on if it's not meant for me.
  * If it is meant for us, print it out.
  * S message format: "S%s/%lu/%s\n" for destAddrChar, ttl_l, and payload
 */
-void send_received(char *line)
-{
-	printf("this is the message received: %s\n", line);
-	char *port = index(line, ':');
-	if (port == 0) {
-		fprintf(stderr, "in send recenve: format is S<dst_addr>:<port>/TTL/payload\n");
-		return;
-	}
-	*port++ = 0;
+void send_received(char *line){
 
-	char *ttl = index(port, '/');
-	if (ttl == 0) {
-		fprintf(stderr, "in send receive: no ttl\n");
-		return;
-	}
-	*ttl++ = 0;
-	long ttl_l = atol(ttl);
+  int len = strlen(line);
 
-	char *payload = index(ttl, '/');
-	if (payload == 0) {
-		fprintf(stderr, "in send receive: no payload\n");
-		return;
-	}
-	*payload++ = 0;
+  char *port = index(line, ':');
+  if (port == 0) {
+    fprintf(stderr, "send_received: format is S<dst_addr>:<port>/TTL/payload\n");
+    return;
+  }
+  *port++ = 0;
 
-	/* Get the source and message identifier.
-	 */
-	struct sockaddr_in dst_addr;
-	if (addr_get(&dst_addr, line, atoi(port)) < 0) {
-		return;
-	}
+  char *ttl = index(port, '/');
+  if (ttl == 0) {
+    fprintf(stderr, "send_received: no ttl\n");
+    return;
+  }
+  *ttl++ = 0;
+  long ttl_l = atol(ttl);
 
-	// Restore the line.
-	*--port = ':';
-	*--ttl = '/';			// ttl changes to point to '/'
-	*(payload - 1) = '/';	// patyload still points to payload
+  char *payload = index(ttl, '/');
+  if (payload == 0) {
+    fprintf(stderr, "send_received: no payload\n");
+    return;
+  }
+  *payload++ = 0;
 
-	if (addr_cmp(g_my_addr, dst_addr) == 0) //if the message is for me, print it out
-	{
-		printf("Received Msg: %s", payload);
-	}
-	else
-	{
-		if (ttl_l < 1)
-		{
-			return; //if the ttl is less than 1 and is msg is not meant for us
-		}
-		else
-		{
-			int len = strlen(line); // get length of the whole string
-			// get index of destination node
-			*ttl = '\0';	// end destination node as a char string (will restore later)
-			int nextNodeIndex = nl_index(g_net_topology.nodes, line); // get index of destination node
+  /* Get the source and message identifier.
+   */
+  struct sockaddr_in dst_addr;
+  if (addr_get(&dst_addr, line, atoi(port)) < 0) {
+    return;
+  }
 
-			// get index of my node
-			int myAddrIndex = nl_index(g_net_topology.nodes, g_my_addr_char);
+  if (addr_cmp(g_my_addr, dst_addr) == 0)
+  {
+    //If the message is for me, print it ouf
+    printf("Received Msg: %s\n", payload);
+  }
+  else
+  {
+    if (ttl_l < 1)
+    {
+      //if the ttl is less than 1, we can discard the message
+      return; 
+    }
+    else //otherwise, decrement the TTL and send the message down dijkstra's
+    {      
+      ttl_l--;
+      
+      char *dst_addr_str = addr_to_string(dst_addr);
 
-			// find the neighbor node on the path of the shortest distance to destination
-			while (g_net_topology.prev[nextNodeIndex] != UNDEFINED && g_net_topology.prev[nextNodeIndex] != myAddrIndex) {
-				nextNodeIndex = g_net_topology.prev[nextNodeIndex];
-			}
+      //Create the updated new msg, increase size incase ttl changed
+      char *updated_msg = malloc(len + 50);
+      sprintf(updated_msg, "S%s/%lu/%s\n", dst_addr_str, ttl_l, payload);
 
-			if (g_net_topology.prev[nextNodeIndex] == myAddrIndex) { // the neighbor node is found, relay message to it
-				char *nextNodeChar = nl_name(g_net_topology.nodes, nextNodeIndex); // get this neighbor's node
-				struct sockaddr_in* nextNode_addr = string_to_addr(nextNodeChar); // get this neighbor's address
+      //pass message along
+      int src_node_index = nl_index(g_net_topology.nodeList, g_my_addr_char);
+      int dst_node_index = nl_index(g_net_topology.nodeList, dst_addr_str);
+      free(dst_addr_str);
 
-				// prepare the message to send to this neighbor (with ttl decreased by 1)
-				ttl_l--;
-				char *msg = malloc(len + 64); // add sufficient bytes in case previous ttl_l was coded differently 
-				sprintf(msg, "S%s/%lu/%s\n", line, ttl_l, payload); // line is a char string representing destination node
+      int iter_dst_node_index = dst_node_index;
 
-				// find the neighbor's fl to send the messgae
-				struct file_info *fi;
-				for (fi = g_file_info; fi != 0; fi = fi->next) { // find this neighbor's fi
-					if (addr_cmp(fi->addr, *nextNode_addr) == 0) { // fi is found
-						file_info_send(fi, msg, strlen(msg)+1);
-						break;
-					}
-				}
+      int nextNodeIndex = -1;
 
-				free(msg);
-				free(nextNode_addr);
-				free(nextNodeChar);
-			}
+      //find the next node to send it to, if it doesn't exist, return
+      while(1 == 1){
+        if(g_net_topology.prev[iter_dst_node_index] == -1){
+        	free(updated_msg);
+        	return;
+        }
+        if(g_net_topology.prev[iter_dst_node_index] == src_node_index){
+          nextNodeIndex = iter_dst_node_index;
+          break;
+        }
+        else{
+          iter_dst_node_index = g_net_topology.prev[iter_dst_node_index];
+        }
+      }
+		
+	char *nextNodeChar = nl_name(g_net_topology.nodeList, nextNodeIndex);
 
-			*ttl = '/';		// restore the original line
-		}
-	}
+    struct sockaddr_in *nextNodeAddr = string_to_addr(nextNodeChar);
 
+    //find fi of the next node to send the message along
+    struct file_info *fi = g_file_info;
+    while(fi != NULL){
+      if ((fi->type == FI_INCOMING || (fi->type == FI_OUTGOING && fi->u.fi_outgoing.status == FI_CONNECTED && fi->status == FI_KNOWN)) && addr_cmp(fi->addr, *nextNodeAddr) == 0) {
+        file_info_send(fi, updated_msg, strlen(updated_msg));
+        break;
+      	}
+      	fi = fi->next;
+       }
+      free(nextNodeAddr);
+      free(updated_msg);
+    }
+  }
 }
 
 /* A line of input (a command) is received.  Look at the first character to determine
@@ -767,11 +757,11 @@ static void message_handler(struct file_info *fi, int events){
 		flood_gossip();
 
 		//update network graph with disconnection
-		int numNodes = nl_nsites(g_net_topology.nodes);
+		int numNodes = nl_nsites(g_net_topology.nodeList);
 		char *myAddr = addr_to_string(g_my_addr);
 		char *dstAddr = addr_to_string(fi->addr);
-		set_dist(g_net_topology.nodes, g_net_topology.graph, numNodes, myAddr, dstAddr, INFINITY);
-		set_dist(g_net_topology.nodes, g_net_topology.graph, numNodes, dstAddr, myAddr, INFINITY);
+		set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, myAddr, dstAddr, INFINITY);
+		set_dist(g_net_topology.nodeList, g_net_topology.graph, numNodes, dstAddr, myAddr, INFINITY);
 		free(myAddr);
 		free(dstAddr);
 
@@ -979,7 +969,7 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
 
-	int optVal = 0;
+	int optVal = 1;
 	int setSockOptSuccess = setsockopt(skt, SOL_SOCKET, SO_REUSEADDR, &optVal, sizeof(int));
 	if (setSockOptSuccess < 0) //call to socket returned error
 	{

@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <limits.h>
+#include <stdbool.h>
 
 #define INFINITY		INT_MAX
 #define UNDEFINED					(-1)
@@ -48,7 +49,10 @@ void nl_destroy(struct node_list *nl);
 void set_dist(struct node_list *nl, int graph[], int nnodes, char *src, char *dst, int dist);
 char* addr_to_string(struct sockaddr_in addr);
 struct sockaddr_in* string_to_addr(char* string);
+char **nl_get_nodes(struct node_list *nl);
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]);
 
 // functions from connect.c
+int add_node_update_graph(char *node, bool reset);
+void update_shortest_distances();
 void update_from_gossip(char *srcAddrChar, char *payload);
