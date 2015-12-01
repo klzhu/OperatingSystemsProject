@@ -104,8 +104,8 @@ void gossip_received(struct file_info *fi, char *line){
 	file_broadcast(msg, len + 2, fi);
 
 	msg[ctr - line] = '\0'; // make msg + 1 to represet addr as a char string 
-	update_from_gossip(&msg[1], payload); // update network graph with this new gossip 
-	update_shortest_distances(); // call Dijkstra's algorithm to update distances
+	bool modified = update_from_gossip(&msg[1], payload); // update network graph with this new gossip 
+	if (modified) update_shortest_distacnes(); // call Dijkstra's algorithm to update distances
 
 	free(msg);
 }

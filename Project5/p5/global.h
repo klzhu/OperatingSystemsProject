@@ -53,6 +53,5 @@ char **nl_get_nodes(struct node_list *nl);
 void dijkstra(int graph[], int nnodes, int src, int dist[], int prev[]);
 
 // functions from connect.c
-int add_node_update_graph(char *node, bool reset);
-void update_shortest_distances();
-void update_from_gossip(char *srcAddrChar, char *payload);
+bool update_from_gossip(char *srcAddrChar, char *payload);
+void update_shortest_distacnes();
