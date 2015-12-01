@@ -22,7 +22,7 @@
 #include "block_if.h"
 #include "ufsdisk.h"
 
-#define NUM_BITS_IN_BYTES		8 //8 bits in a byte
+#define NUM_BITS_IN_BYTES		8  /* 8 bits in a byte */
 
  /* Temporary information about the file system and a particular inode.
  * Convenient for all operations.
@@ -151,48 +151,44 @@ block_if ufsdisk_init(block_if below, unsigned int inode_no){
  * K = nblocks - 1 - ceil(n_inodes/INODES_PER_BLOCK)
  */
 block_no setup_freebitmapblocks(block_if below, block_no next_free, block_no nblocks){
-	block_no n_freebitmapblocks = 0;	// # freebitmap blocks
-
 	//estimate the num of free bit blocks we need
-	unsigned int n_inodeblocks = next_free - 1; //the num of inode blocks should be the block no if our first free block - 1 (for the superblock)
+	unsigned int n_inodeblocks = next_free - 1; //the num of inode blocks
 	unsigned int K = nblocks - 1 - n_inodeblocks;
-	n_freebitmapblocks = ceil(K / (1 + BLOCK_SIZE * NUM_BITS_IN_BYTES));
+	block_no n_freebitmapblocks = (block_no)ceil(K / (1 + BLOCK_SIZE * NUM_BITS_IN_BYTES)); // estimated # freebitmap blocks
 
-	block_no remaining_blocks = K - n_freebitmapblocks;
-	block_no n_fullfreebitmapblocks = floor(remaining_blocks / (BLOCK_SIZE * NUM_BITS_IN_BYTES)); //num of bitmap blocks that are filled by storing bitmap of remaining blocks
-	block_no leftoverblocks = remaining_blocks - (n_fullfreebitmapblocks * NUM_BITS_IN_BYTES); //num blocks that will go into the last leftover free bitmap block
+	block_no n_remaining_blocks = K - n_freebitmapblocks;
+	block_no leftoverblocks = n_remaining_blocks % (BLOCK_SIZE * NUM_BITS_IN_BYTES); //num blocks that will use a partial bitmap block
+	block_no n_fullfreebitmapblocks = (leftoverblocks == 0) ? n_freebitmapblocks : n_freebitmapblocks - 1; // # bitmap blocks where each bit corresponds to a free block
 	block_no index_lastfullbitmapblock = next_free + n_fullfreebitmapblocks; //index to our last free bitmap block that will be full
 
-	union ufs_block freebitmapblock;
-	memset(&freebitmapblock, 0, BLOCK_SIZE); //set all bytes in this block to 0
-	while (next_free < index_lastfullbitmapblock) //for all blocks where every bit represents a block
+	int k;
+	for (k = 0; k < n_fullfreebitmapblocks; k++) //set all blocks for full free bitmap blocks
 	{
-		if ((*below->write)(below, next_free, (block_t *)&freebitmapblock) < 0) {
-			panic("treedisk_setup_freelist");
+		if ((*below->write)(below, next_free + k, (block_t *)&null_block) < 0) {
+			panic("ufs_setup_freebitmapblocks");
 		}
-
-		next_free++;
 	}
 
-	//if we have any leftover blocks, set the necessary bits to 0 and set extra bits to 1 (to indicate they are not free but are extras)
+	//if we have any leftover blocks, set bits associated with block to 0 and remaining bits to 1 to indicate it is unavailable
 	if (leftoverblocks > 0)
 	{
+		union ufs_block freebitmapblock;
+		memset(&freebitmapblock, 0xFF, BLOCK_SIZE); //set all block bits to 1
+
 		int fullBytes = leftoverblocks / NUM_BITS_IN_BYTES; //num of bytes to fully set to 0
 		int leftoverBits = leftoverblocks % NUM_BITS_IN_BYTES; //num of leftover bits to set to 0
 
-		int i;
-		for (i = 0; i < fullBytes; i++)
-			freebitmapblock.freebitmapblock.status[i] = 0;
+		for (k = 0; k < fullBytes; k++)
+			freebitmapblock.freebitmapblock.status[k] = 0;
 
-		//set the leftover bits to 0 and rest of bits in byte to 1, then set rest of bytes in block to 1
-		freebitmapblock.freebitmapblock.status[fullBytes] = 0xFF;
-		freebitmapblock.freebitmapblock.status[fullBytes] >> leftoverBits;
+		if (leftoverBits != 0) { //set partial byte's first leftoverBits to 0 and remaining bits to 1
+			unsigned char uChar = 0xFF;
+			uChar >>= leftoverBits;
+			freebitmapblock.freebitmapblock.status[fullBytes] = (char) uChar;
+		}
 
-		for (i = fullBytes + 1; i < BLOCK_SIZE; i++)
-			freebitmapblock.freebitmapblock.status[i] = 0xFF;
-
-		if ((*below->write)(below, next_free, (block_t *)&freebitmapblock) < 0) {
-			panic("treedisk_setup_freelist");
+		if ((*below->write)(below, next_free + n_fullfreebitmapblocks, (block_t *)&freebitmapblock) < 0) {
+			panic("ufs_setup_freebitmapblocks");
 		}
 	}
 
