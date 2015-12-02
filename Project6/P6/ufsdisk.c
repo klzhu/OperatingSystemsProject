@@ -22,14 +22,17 @@
 #include "block_if.h"
 #include "ufsdisk.h"
 
-#define NUM_BITS_IN_BYTES						8  /* 8 bits in a byte */
-#define MAX_DIRECT_BLOCK_OFFSET					11 /* The last offset reachable by direct block pointers is 11*/
-#define MAX_SINGLE_INDIRECT_BLOCK_OFFSET		MAX_DIRECT_BLOCK_OFFSET + REFS_PER_BLOCK /* The last offset reachable by the single indirect block*/	
-#define MAX_DOUBLE_INDIRECT_BLOCK_OFFSET		MAX_SINGLE_INDIRECT_BLOCK_OFFSET + (REFS_PER_BLOCK * REFS_PER_BLOCK) /* The last offset reachable by the single indirect block*/	
-#define MAX_TRIPLE_INDIRECT_BLOCK_OFFSET		MAX_DOUBLE_INDIRECT_BLOCK_OFFSET + (REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK) /* The last offset reachable by the single indirect block*/	
-#define SINGLE_INDIRECT_BLOCK_INDEX				12		
-#define DOUBLE_INDIRECT_BLOCK_INDEX				13		
-#define TRIPLE_INDIRECT_BLOCK_INDEX				14			
+#define NUM_BITS_IN_BYTES				8	/* 8 bits in a byte */
+#define NUM_DIRECT_BLOCKS				REFS_PER_INODE - 3 /* # of blocks by direct pointers */
+#define NUM_SINGLE_INDIRECT_BLOCKS		NUM_DIRECT_BLOCKS + REFS_PER_BLOCK /* # of blocks by the single indirect pointer*/	
+#define NUM_DOUBLE_INDIRECT_BLOCKS		NUM_SINGLE_INDIRECT_BLOCKS + (REFS_PER_BLOCK * REFS_PER_BLOCK) /* # of blocks by the double indirect pointer */	
+#define NUM_TRIPLE_INDIRECT_BLOCKS		NUM_DOUBLE_INDIRECT_BLOCKS + (REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK) /* # of blocks by the triple pointer */	
+#define SINGLE_INDIRECT_BLOCK_INDEX		REFS_PER_INODE - 3		
+#define DOUBLE_INDIRECT_BLOCK_INDEX		REFS_PER_INODE - 2		
+#define TRIPLE_INDIRECT_BLOCK_INDEX		REFS_PER_INODE - 1	
+ // capacity (# of blocks) of an indirect pointer at each level
+const int NUM_BLOCKS_LEVEL[3] = { 1, REFS_PER_BLOCK, REFS_PER_BLOCK*REFS_PER_BLOCK };
+
 
  /* Temporary information about the file system and a particular inode.
  * Convenient for all operations.
@@ -115,9 +118,8 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 
 	struct ufs_state *us = bi->state;
 	block_if below = us->below;
-	block_no blockToRead = -1;
+	block_no blockToRead;
 	int nlevels = -1; //number of levels of the tree we need to traverse
-	int indexToSubtract = -1; //this will track the index we subtract from for our calculations, depending on which indirect block we're at
 
 	/* Get info from underlying file system.
 	*/
@@ -133,31 +135,25 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 		return -1;
 	}
 
-	if (offset <= MAX_DIRECT_BLOCK_OFFSET) { //the block being read is pointed to be a direct pointer
+	if (offset < NUM_DIRECT_BLOCKS) { //the block being read is pointed to be a direct pointer
 		//get the block no to read
 		blockToRead = snapshot.inode->refs[offset];
 		nlevels = 0;
-	}
-
-	else if (offset <= MAX_SINGLE_INDIRECT_BLOCK_OFFSET) { //block being read is pointed to by the single indirect block
+	} else if (offset < NUM_SINGLE_INDIRECT_BLOCKS) { //block being read is pointed to by the single indirect block
 		//get the indirect block no to read
 		blockToRead = snapshot.inode->refs[SINGLE_INDIRECT_BLOCK_INDEX];
 		nlevels = 1;
-		indexToSubtract = MAX_DIRECT_BLOCK_OFFSET;
-	}
-
-	else if (offset <= MAX_DOUBLE_INDIRECT_BLOCK_OFFSET) { //block being read is pointed to by the double indirect block
+		offset -= NUM_DIRECT_BLOCKS;
+	} else if (offset < NUM_DOUBLE_INDIRECT_BLOCKS) { //block being read is pointed to by the double indirect block
 		//get the indirect block no to read
 		blockToRead = snapshot.inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX];
 		nlevels = 2;
-		indexToSubtract = MAX_SINGLE_INDIRECT_BLOCK_OFFSET;
-	}
-
-	else { //block being read is pointed to by the triple indirect block
+		offset -= NUM_SINGLE_INDIRECT_BLOCKS;
+	} else { //block being read is pointed to by the triple indirect block
 		//get the indirect block no to read
 		blockToRead = snapshot.inode->refs[TRIPLE_INDIRECT_BLOCK_INDEX];
 		nlevels = 3;
-		indexToSubtract = MAX_DOUBLE_INDIRECT_BLOCK_OFFSET;
+		offset -= NUM_DOUBLE_INDIRECT_BLOCKS;
 	}
 
 	for (;;) {
@@ -174,22 +170,21 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 		}
 
 		//if we're on the last level, we're done
-		if (nlevels == 0) return 0;
+		if (nlevels == 0) break;
 
 		/* The block is an indirect block.  Figure out the index into this
 		* block and get the block number.
 		*/
 		nlevels--;
-		unsigned int index = -1;
-		if (nlevels > 0) index = (offset - MAX_DOUBLE_INDIRECT_BLOCK_OFFSET + 1) / REFS_PER_BLOCK; //we do not point to a data block yet
-		else index = (offset - MAX_DOUBLE_INDIRECT_BLOCK_OFFSET + 1) % REFS_PER_BLOCK; //we point to a data block now
-
 		struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
-		blockToRead = tib->refs[index];
-		if ((*below->read)(below, blockToRead, block) < 0) {
-			panic("ufsdisk_read");
+		if (nlevels == 0) blockToRead = tib->refs[offset];
+		else {
+			blockToRead = tib->refs[offset / NUM_BLOCKS_LEVEL[nlevels]];
+			offset = offset % NUM_BLOCKS_LEVEL[nlevels];
 		}
 	}
+
+	return 0;
 }
 
 /* Write *block at the given block number 'offset'.
