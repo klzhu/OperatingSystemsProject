@@ -22,7 +22,14 @@
 #include "block_if.h"
 #include "ufsdisk.h"
 
-#define NUM_BITS_IN_BYTES		8  /* 8 bits in a byte */
+#define NUM_BITS_IN_BYTES						8  /* 8 bits in a byte */
+#define MAX_DIRECT_BLOCK_OFFSET					11 /* The last offset reachable by direct block pointers is 11*/
+#define MAX_SINGLE_INDIRECT_BLOCK_OFFSET		MAX_DIRECT_BLOCK_OFFSET + REFS_PER_BLOCK /* The last offset reachable by the single indirect block*/	
+#define MAX_DOUBLE_INDIRECT_BLOCK_OFFSET		MAX_SINGLE_INDIRECT_BLOCK_OFFSET + (REFS_PER_BLOCK * REFS_PER_BLOCK) /* The last offset reachable by the single indirect block*/	
+#define MAX_TRIPLE_INDIRECT_BLOCK_OFFSET		MAX_DOUBLE_INDIRECT_BLOCK_OFFSET + (REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK) /* The last offset reachable by the single indirect block*/	
+#define SINGLE_INDIRECT_BLOCK_INDEX				12		
+#define DOUBLE_INDIRECT_BLOCK_INDEX				13		
+#define TRIPLE_INDIRECT_BLOCK_INDEX				14			
 
  /* Temporary information about the file system and a particular inode.
  * Convenient for all operations.
@@ -94,7 +101,152 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 /* Read a block at the given block number 'offset' and return in *block.
  */
 static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
-	// TODO.
+	struct ufs_state *us = bi->state;
+	block_if below = us->below;
+	block_no blockToRead = -1;
+	int nlevels = -1; //number of levels of the tree we need to traverse
+
+	/* Get info from underlying file system.
+	*/
+	struct ufs_snapshot snapshot;
+	if (ufs_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
+		return -1;
+	}
+
+	/* See if the offset is too big.
+	*/
+	if (offset >= snapshot.inode->nblocks) {
+		fprintf(stderr, "!!TDERR: offset too large\n");
+		return -1;
+	}
+
+	if (offset <= MAX_DIRECT_BLOCK_OFFSET) { //the block being read is pointed to be a direct pointer
+		//get the block no to read
+		blockToRead = snapshot.inode->refs[offset];
+
+		/* If there's a hole, return the null block.
+		*/
+		if (blockToRead == 0) {
+			memset(block, 0, BLOCK_SIZE);
+			return 0;
+		}
+
+		if ((*below->read)(below, blockToRead, block) < 0) {
+			panic("ufsdisk_read");
+		}
+	}
+
+	else if (offset <= MAX_SINGLE_INDIRECT_BLOCK_OFFSET) { //block being read is pointed to by the single indirect block
+		//get the indirect block no to read
+		blockToRead = snapshot.inode->refs[SINGLE_INDIRECT_BLOCK_INDEX];
+		nlevels = 1;
+		for (;;) {
+			/* If there's a hole, return the null block.
+			*/
+			if (blockToRead == 0) {
+				memset(block, 0, BLOCK_SIZE);
+				return 0;
+			}
+
+			if ((*below->read)(below, blockToRead, block) < 0) {
+				panic("ufsdisk_read");
+			}
+
+			//if we're on the last level, we're done
+			if (nlevels == 0)
+			{
+				return 0;
+			}
+
+			/* The block is an indirect block.  Figure out the index into this
+			* block and get the block number.
+			*/
+			nlevels--;
+			unsigned int index = (offset - MAX_DIRECT_BLOCK_OFFSET + 1) % REFS_PER_BLOCK;
+			struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
+			blockToRead = tib->refs[index];
+			if ((*below->read)(below, blockToRead, block) < 0) {
+				panic("ufsdisk_read");
+			}
+		}
+	}
+
+	else if (offset <= MAX_DOUBLE_INDIRECT_BLOCK_OFFSET) { //block being read is pointed to by the double indirect block
+		//get the indirect block no to read
+		blockToRead = snapshot.inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX];
+		nlevels = 2;
+		for (;;) {
+			/* If there's a hole, return the null block.
+			*/
+			if (blockToRead == 0) {
+				memset(block, 0, BLOCK_SIZE);
+				return 0;
+			}
+
+			if ((*below->read)(below, blockToRead, block) < 0) {
+				panic("ufsdisk_read");
+			}
+
+			//if we're on the last level, we're done
+			if (nlevels == 0)
+			{
+				return 0;
+			}
+
+			/* The block is an indirect block.  Figure out the index into this
+			* block and get the block number.
+			*/
+			nlevels--;
+			unsigned int index = -1;
+			if (nlevels > 0) index = (offset - MAX_SINGLE_INDIRECT_BLOCK_OFFSET + 1) / REFS_PER_BLOCK; //we do not point to a data block yet
+			else index = (offset - MAX_DIRECT_BLOCK_OFFSET + 1) % REFS_PER_BLOCK; //we point to a data block now
+
+			struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
+			blockToRead = tib->refs[index];
+			if ((*below->read)(below, blockToRead, block) < 0) {
+				panic("ufsdisk_read");
+			}
+		}
+	}
+
+	else { //block being read is pointed to by the triple indirect block
+		//get the indirect block no to read
+		blockToRead = snapshot.inode->refs[TRIPLE_INDIRECT_BLOCK_INDEX];
+		nlevels = 3;
+		for (;;) {
+			/* If there's a hole, return the null block.
+			*/
+			if (blockToRead == 0) {
+				memset(block, 0, BLOCK_SIZE);
+				return 0;
+			}
+
+			if ((*below->read)(below, blockToRead, block) < 0) {
+				panic("ufsdisk_read");
+			}
+
+			//if we're on the last level, we're done
+			if (nlevels == 0)
+			{
+				return 0;
+			}
+
+			/* The block is an indirect block.  Figure out the index into this
+			* block and get the block number.
+			*/
+			nlevels--;
+			unsigned int index = -1;
+			if (nlevels > 0) index = (offset - MAX_DOUBLE_INDIRECT_BLOCK_OFFSET + 1) / REFS_PER_BLOCK; //we do not point to a data block yet
+			else index = (offset - MAX_DOUBLE_INDIRECT_BLOCK_OFFSET + 1) % REFS_PER_BLOCK; //we point to a data block now
+
+			struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
+			blockToRead = tib->refs[index];
+			if ((*below->read)(below, blockToRead, block) < 0) {
+				panic("ufsdisk_read");
+			}
+	}
+
+
 }
 
 /* Write *block at the given block number 'offset'.
