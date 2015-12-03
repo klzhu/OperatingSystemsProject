@@ -101,10 +101,125 @@ static int ufsdisk_nblocks(block_if bi){
 	return snapshot.inode->nblocks;
 }
 
-/* Set the size of the file 'bi' to 'nblocks'.
+static int ufsdisk_resetfreebits(struct ufs_snapshot *snapshot, block_if below, block_no blockNum) {
+	//figure out which freebitmap block the block num is stored at
+	block_no freebitmapblockindex = (block_no) blockNum / (BLOCK_SIZE * NUM_BITS_IN_BYTES) + snapshot->superblock.superblock.n_inodeblocks + 1; //the index of the free bit map our block no is represented in
+	block_no blocknumoffset = blockNum - snapshot->superblock.superblock.n_inodeblocks - snapshot->superblock.superblock.n_freebitmapblocks - 1; //calculate offset so first free block is index 0
+	int index = (blocknumoffset - (freebitmapblockindex * BLOCK_SIZE * NUM_BITS_IN_BYTES)) / NUM_BITS_IN_BYTES; //which byte in our block our block is represented in
+	int bitToReset = (blocknumoffset - (freebitmapblockindex * BLOCK_SIZE * NUM_BITS_IN_BYTES)) % NUM_BITS_IN_BYTES; //which bit in our byte our block is repsented as
+
+	//retrieve the block from memory, reset the bit for our block, write the block back
+	union ufs_block freebitmapblock;
+	if ((*below->read)(below, freebitmapblockindex, (block_t *)&freebitmapblock) < 0) {
+		fprintf(stderr, "!!TDERR: Failure to read data block in ufsdisk_updatefreebits\n");
+		return -1;
+	}
+	unsigned char uChar = 0x1;
+	freebitmapblock.freebitmapblock.status[index] &= uChar <<= abs(bitToReset - 7);
+
+	if ((*below->write)(below, freebitmapblockindex, (block_t *)&freebitmapblock) < 0) {
+		fprintf(stderr, "!!TDERR: Failure to write data block in ufsdisk_updatefreebits\n");
+		return -1;
+	}
+}
+
+/* Set the size of the file 'bi' to 'nblocks'. For this project, we support setsize(0) only.
  */
 static int ufsdisk_setsize(block_if bi, block_no nblocks){
-	// TODO.
+	//validate inputs
+	if (bi == NULL || nblocks != 0)
+	{
+		fprintf(stderr, "!!TDERR: Invalid inputs in ufsdisk_setsize. We only support nblocks = 0\n");
+		return -1;
+	}
+
+	struct ufs_state *us = bi->state;
+
+	struct ufs_snapshot snapshot;
+	treedisk_get_snapshot(&snapshot, us->below, us->inode_no);
+	if (nblocks == snapshot.inode->nblocks) {
+		return nblocks;
+	}
+
+	unsigned int offset;
+	union ufs_block indirectblock;
+	block_no filesize = snapshot.inode->nblocks;
+	for (offset = 0; offset < filesize; offset++)
+	{
+		if (offset < NUM_DIRECT_BLOCKS) {
+			if (snapshot.inode->refs[offset] != 0)
+			{
+				int success = ufsdisk_resetfreebits(&snapshot, us->below, snapshot.inode->refs[offset]);
+				if (success == -1)
+				{
+					return -1;
+				}
+			}
+		} else if (offset < NUM_SINGLE_INDIRECT_BLOCKS && snapshot.inode->refs[SINGLE_INDIRECT_BLOCK_INDEX] != 0) { //block being read is pointed to by the single indirect block
+			unsigned int adjustedOffset = offset - NUM_DIRECT_BLOCKS;
+			block_no blockToRead = snapshot.inode->refs[SINGLE_INDIRECT_BLOCK_INDEX];
+
+			//read the indirect block to get the offset we want
+			if ((*us->below->read)(us->below, blockToRead, (block_t*)&indirectblock) < 0) {
+				fprintf(stderr, "!!TDERR: Failure to read data block\n");
+				return -1;
+			}
+
+			int success = ufsdisk_resetfreebits(&snapshot, us->below, indirectblock.indirblock.refs[adjustedOffset]);
+			if (success == -1) return -1;
+
+			//if we just freed the last offset pointed to by the direct block, or we've reached the end of our size, free the block pointing to the indirect block
+			if (offset == filesize -1 || adjustedOffset == REFS_PER_BLOCK - 1) success = ufsdisk_resetfreebits(&snapshot, us->below, blockToRead);
+			if (success == -1) return -1;
+
+		}
+		else if (offset < NUM_DOUBLE_INDIRECT_BLOCKS && snapshot.inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX] != 0) { //block being read is pointed to by the double indirect block
+			unsigned int adjustedOffset = offset - NUM_SINGLE_INDIRECT_BLOCKS;
+			block_no blockToRead = snapshot.inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX];
+
+			int nlevels = 2;
+			for (nlevels; nlevels >= 0; --nlevels)
+			{
+				//read the indirect block to get the offset we want
+				if ((*us->below->read)(us->below, blockToRead, (block_t*)&indirectblock) < 0) {
+					fprintf(stderr, "!!TDERR: Failure to read data block\n");
+					return -1;
+				}
+
+				int success = ufsdisk_resetfreebits(&snapshot, us->below, indirectblock.indirblock.refs[adjustedOffset]);
+				if (success == -1)
+				{
+					return -1;
+				}
+
+				//if we just freed the last offset pointed to by the direct block, or we've reached the end of our size, free the block pointing to the indirect block
+				if (offset == filesize - 1 || adjustedOffset == (REFS_PER_BLOCK * REFS_PER_BLOCK - 1)) success = ufsdisk_resetfreebits(&snapshot, us->below, blockToRead);
+				if (success == -1) return -1;
+			}
+
+		} else if(snapshot.inode->refs[NUM_TRIPLE_INDIRECT_BLOCKS] != 0) { //block being read is pointed to by the triple indirect block
+			unsigned int adjustedOffset = offset - NUM_DOUBLE_INDIRECT_BLOCKS;
+			block_no blockToRead = snapshot.inode->refs[TRIPLE_INDIRECT_BLOCK_INDEX];
+
+			//read the indirect block to get the offset we want
+			if ((*us->below->read)(us->below, blockToRead, (block_t*)&indirectblock) < 0) {
+				fprintf(stderr, "!!TDERR: Failure to read data block\n");
+				return -1;
+			}
+
+			int success = ufsdisk_resetfreebits(&snapshot, us->below, indirectblock.indirblock.refs[adjustedOffset]);
+			if (success == -1)
+			{
+				return -1;
+			}
+
+			//if we just freed the last offset pointed to by the direct block, or we've reached the end of our size, free the block pointing to the indirect block
+			if (offset == filesize - 1 || adjustedOffset == (REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK - 1)) success = ufsdisk_resetfreebits(&snapshot, us->below, blockToRead);
+			if (success == -1) return -1;
+		}
+
+
+	}
 }
 
 /* Read a block at the given block number 'offset' and return in *block.
@@ -156,7 +271,7 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 		offset -= NUM_DOUBLE_INDIRECT_BLOCKS;
 	}
 
-	for (;;) {
+	while(1) {
 		/* If there's a hole, return the null block.
 		*/
 		if (blockToRead == 0) {
@@ -247,6 +362,13 @@ block_if ufsdisk_init(block_if below, unsigned int inode_no){
  * K = nblocks - 1 - ceil(n_inodes/INODES_PER_BLOCK)
  */
 block_no setup_freebitmapblocks(block_if below, block_no next_free, block_no nblocks){
+	//validate inputs
+	if (below == NULL || next_free < 0 || nblocks < 0)
+	{
+		fprintf(stderr, "!!TDERR: Invalid inputs in ufs_setup_freebitmapblocks\n");
+		return -1;
+	}
+
 	//estimate the num of free bit blocks we need
 	unsigned int n_inodeblocks = next_free - 1; //the num of inode blocks
 	unsigned int K = nblocks - 1 - n_inodeblocks;
@@ -255,13 +377,13 @@ block_no setup_freebitmapblocks(block_if below, block_no next_free, block_no nbl
 	block_no n_remaining_blocks = K - n_freebitmapblocks;
 	block_no leftoverblocks = n_remaining_blocks % (BLOCK_SIZE * NUM_BITS_IN_BYTES); //num blocks that will use a partial bitmap block
 	block_no n_fullfreebitmapblocks = (leftoverblocks == 0) ? n_freebitmapblocks : n_freebitmapblocks - 1; // # bitmap blocks where each bit corresponds to a free block
-	block_no index_lastfullbitmapblock = next_free + n_fullfreebitmapblocks; //index to our last free bitmap block that will be full
 
 	int k;
 	for (k = 0; k < n_fullfreebitmapblocks; k++) //set all blocks for full free bitmap blocks
 	{
 		if ((*below->write)(below, next_free + k, (block_t *)&null_block) < 0) {
-			panic("ufs_setup_freebitmapblocks");
+			fprintf(stderr, "!!TDERR: ufs_setup_freebitmapblocks\n");
+			return -1;
 		}
 	}
 
@@ -284,7 +406,8 @@ block_no setup_freebitmapblocks(block_if below, block_no next_free, block_no nbl
 		}
 
 		if ((*below->write)(below, next_free + n_fullfreebitmapblocks, (block_t *)&freebitmapblock) < 0) {
-			panic("ufs_setup_freebitmapblocks");
+			fprintf(stderr, "!!TDERR: ufs_setup_freebitmapblocks\n");
+			return -1;
 		}
 	}
 
