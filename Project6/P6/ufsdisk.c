@@ -121,11 +121,12 @@ static int ufs_freebit(struct ufs_snapshot *snapshot, block_if below, block_no b
 		fprintf(stderr, "!!TDERR: Failure to write data block in ufsdisk_updatefreebits\n");
 		return -1;
 	}
+	return 0;
 }
 
 static int ufsdisk_traverseindblocks(struct ufs_snapshot *snapshot, block_if below, int nlevels, block_no blocknum)
 {
-	if (nlevels == 0 && blocknum != 0) ufs_freebit(snapshot, below, blocknum);
+	if (nlevels == 0) ufs_freebit(snapshot, below, blocknum);
 	else { //we have to traverse the indirect blocks to get to our data blocks
 		nlevels--;
 		struct ufs_indirblock indirblock;
@@ -136,11 +137,18 @@ static int ufsdisk_traverseindblocks(struct ufs_snapshot *snapshot, block_if bel
 		int k;
 		for (k = 0; k < REFS_PER_BLOCK; k++)
 		{
-			if (indirblock.refs[k] != 0) //if it is not a hole
+			if (indirblock.refs[k] != 0) { //if it is not a hole
 				ufsdisk_traverseindblocks(snapshot, below, nlevels, indirblock.refs[k]);
+				indirblock.refs[k] = 0;
+			}
 		}
 		ufs_freebit(snapshot, below, blocknum);
+		if ((*below->write)(below, snapshot->inode_blockno, (block_t *)&snapshot->inodeblock) < 0) {
+			fprintf(stderr, "!!TDERR: Failed to write inode back to disk in ufsdisk_setsize\n");
+			return -1;
+		}
 	}
+	return 0;
 }
 
 /* Set the size of the file 'bi' to 'nblocks'. For this project, we support setsize(0) only.
@@ -155,36 +163,47 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 
 	struct ufs_state *us = bi->state;
 
-	struct ufs_snapshot snapshot;
-	treedisk_get_snapshot(&snapshot, us->below, us->inode_no);
-	if (nblocks == snapshot.inode->nblocks) {
+	struct ufs_snapshot *snapshot;
+	ufs_get_snapshot(snapshot, us->below, us->inode_no);
+	if (nblocks == snapshot->inode->nblocks) {
 		return nblocks;
 	}
 
-	unsigned int offset;
-	union ufs_block indirectblock;
-	block_no filesize = snapshot.inode->nblocks;
+	block_no filesize = snapshot->inode->nblocks;
 	int nlevels = -1;
-	for (offset = 0; offset < REFS_PER_INODE; offset++)
+	int index;
+	for (index = 0; index < REFS_PER_INODE; index++)
 	{
-		if (offset < NUM_DIRECT_BLOCKS && snapshot.inode->refs[offset] != 0) {
+		if (index < NUM_DIRECT_BLOCKS && snapshot->inode->refs[index] != 0) {
 			nlevels = 0;
-			int success = ufsdisk_traverseindblocks(&snapshot, us->below, nlevels, snapshot.inode->refs[offset]);
+			int success = ufsdisk_traverseindblocks(snapshot, us->below, nlevels, snapshot->inode->refs[index]);
 			if (success == -1) 	return -1;
-		} else if (offset == SINGLE_INDIRECT_BLOCK_INDEX && snapshot.inode->refs[SINGLE_INDIRECT_BLOCK_INDEX] != 0) { //block being read is pointed to by the single indirect block
+			snapshot->inode->refs[index] = 0;
+		} else if (index == SINGLE_INDIRECT_BLOCK_INDEX && snapshot->inode->refs[SINGLE_INDIRECT_BLOCK_INDEX] != 0) { //block being read is pointed to by the single indirect block
 			nlevels = 1;
-			int success = ufsdisk_traverseindblocks(&snapshot, us->below, nlevels, snapshot.inode->refs[offset]);
+			int success = ufsdisk_traverseindblocks(snapshot, us->below, nlevels, snapshot->inode->refs[index]);
 			if (success == -1) 	return -1;
+			snapshot->inode->refs[index] = 0;
 		}
-		else if (offset == DOUBLE_INDIRECT_BLOCK_INDEX && snapshot.inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX] != 0) { //block being read is pointed to by the double indirect block
+		else if (index == DOUBLE_INDIRECT_BLOCK_INDEX && snapshot->inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX] != 0) { //block being read is pointed to by the double indirect block
 				nlevels = 2;
-				int success = ufsdisk_traverseindblocks(&snapshot, us->below, nlevels, snapshot.inode->refs[offset]);
+				int success = ufsdisk_traverseindblocks(snapshot, us->below, nlevels, snapshot->inode->refs[index]);
 				if (success == -1) 	return -1;
-			} else if(snapshot.inode->refs[NUM_TRIPLE_INDIRECT_BLOCKS] != 0) { //block being read is pointed to by the triple indirect block
+				snapshot->inode->refs[index] = 0;
+		} 
+		else if(snapshot->inode->refs[NUM_TRIPLE_INDIRECT_BLOCKS] != 0) { //block being read is pointed to by the triple indirect block
 				nlevels = 3;
-				int success = ufsdisk_traverseindblocks(&snapshot, us->below, nlevels, snapshot.inode->refs[offset]);
+				int success = ufsdisk_traverseindblocks(snapshot, us->below, nlevels, snapshot->inode->refs[index]);
 				if (success == -1) 	return -1;
+				snapshot->inode->refs[index] = 0;
 		}
+	}
+
+	//set size to 0, write back t disk
+	snapshot->inode->nblocks = nblocks;
+	if ((*us->below->write)(us->below, snapshot->inode_blockno, (block_t *)&snapshot->inodeblock) < 0) {
+		fprintf(stderr, "!!TDERR: Failed to write inode back to disk in ufsdisk_setsize\n");
+		return -1;
 	}
 }
 
@@ -282,8 +301,8 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
 	block_no blockToWrite;
 	int nlevels = -1; //number of levels of the tree we need to traverse
 
-					  /* Get info from underlying file system.
-					  */
+	/* Get info from underlying file system.
+	*/
 	struct ufs_snapshot snapshot;
 	if (ufs_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
 		return -1;

@@ -13,7 +13,8 @@ OBJECTS = \
 	statdisk.o \
 	tracedisk.o \
 	treedisk.o \
-	treedisk_chk.o
+	treedisk_chk.o \
+	ufsdisk.o
 
 all: trace chktrace
 
