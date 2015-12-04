@@ -45,8 +45,8 @@ int main(int argc, char **argv){
 
 	/* Virtualize the store, creating a collection of 64 virtual stores.
 	 */
-	if (treedisk_create(disk, MAX_INODES) < 0) {
-		panic("trace: can't create treedisk file system");
+	if (ufsdisk_create(disk, MAX_INODES) < 0) {
+		panic("trace: can't create ufsdisk file system");
 	}
 
 	/* Add a disk to keep track of statistics.
@@ -72,7 +72,7 @@ int main(int argc, char **argv){
 	(*xdisk->destroy)(xdisk);
 	(*cdisk->destroy)(cdisk);
 
-	/* No longer running treedisk or cachedisk code.
+	/* No longer running ufsdisk or cachedisk code.
 	 */
 	alarm(0);
 
@@ -84,7 +84,7 @@ int main(int argc, char **argv){
 
 	/* Check that disk just one more time for good measure.
 	 */
-	treedisk_check(disk);
+	//treedisk_check(disk);
 
 	(*disk->destroy)(disk);
 
