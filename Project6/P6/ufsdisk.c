@@ -373,7 +373,7 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
 
 	while (1) {
 		//indirblock
-		struct ufs_indirblock ufsib;
+		struct ufs_indirblock *ufsib;
 		//both branches check if we've reached the bottom level to break from loop
 		//offset gives a hole; need to alloc a new block
 		if (blockToWrite == 0) {
@@ -390,7 +390,7 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
 			}
 			if ((below->read)(below, blockToWrite, (block_t *) &ufsib) < 0) 
 			{
-				panic("unable to read during write\n")
+				panic("unable to read during write\n");
 			}
 		}
 		//decrement level
