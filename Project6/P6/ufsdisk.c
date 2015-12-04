@@ -22,18 +22,6 @@
 #include "block_if.h"
 #include "ufsdisk.h"
 
-#define NUM_BITS_IN_BYTES				8	/* 8 bits in a byte */
-#define NUM_DIRECT_BLOCKS				REFS_PER_INODE - 3 /* # of blocks by direct pointers */
-#define NUM_SINGLE_INDIRECT_BLOCKS		NUM_DIRECT_BLOCKS + REFS_PER_BLOCK /* # of blocks by the single indirect pointer*/	
-#define NUM_DOUBLE_INDIRECT_BLOCKS		NUM_SINGLE_INDIRECT_BLOCKS + (REFS_PER_BLOCK * REFS_PER_BLOCK) /* # of blocks by the double indirect pointer */	
-#define NUM_TRIPLE_INDIRECT_BLOCKS		NUM_DOUBLE_INDIRECT_BLOCKS + (REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK) /* # of blocks by the triple pointer */	
-#define SINGLE_INDIRECT_BLOCK_INDEX		REFS_PER_INODE - 3		
-#define DOUBLE_INDIRECT_BLOCK_INDEX		REFS_PER_INODE - 2		
-#define TRIPLE_INDIRECT_BLOCK_INDEX		REFS_PER_INODE - 1	
- // capacity (# of blocks) of an indirect pointer at each level
-const int NUM_BLOCKS_LEVEL[3] = { 1, REFS_PER_BLOCK, REFS_PER_BLOCK*REFS_PER_BLOCK };
-
-
  /* Temporary information about the file system and a particular inode.
  * Convenient for all operations.
  */

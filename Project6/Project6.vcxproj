@@ -163,6 +163,7 @@
     <ClCompile Include="P6\treedisk.c" />
     <ClCompile Include="P6\treedisk_chk.c" />
     <ClCompile Include="P6\ufsdisk.c" />
+    <ClCompile Include="P6\ufsdisk_chk.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="P6\block_if.h" />

@@ -66,6 +66,9 @@
     <ClCompile Include="P6\trace.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="P6\ufsdisk_chk.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="P6\treedisk.h">
