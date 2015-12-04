@@ -287,6 +287,40 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 	return 0;
 }
 
+static block_no ufs_alloc_block(block_if below, struct ufs_snapshot *snapshot) {
+	block_no b;
+
+	/*if ((b = snapshot->superblock.superblock.n_freebitmapblocks) == 0) {
+		panic("ufs_alloc_block: block store is full\n");
+	}*/
+
+	union ufs_block freebitmapblock;
+	if ((*below->read)(below, b, (block_t *)&freebitmapblock) < 0) {
+		panic("ufs_alloc_block: failed to read freebitmap block\n");
+	}
+	int i;
+	for (i = REFS_PER_BLOCK; --i > 0;) {
+		if (freebitmapblock.freebitmapblock.status[i] != 0) {
+			break;
+		}
+	}
+
+	block_no free_blockno;
+	if (i == 0) {
+		free_blockno = -1;
+		panic("ufs_alloc_block: no free blocks\n");
+	}
+	else {
+		free_blockno = freebitmapblock.freebitmapblock.status[i];
+		freebitmapblock.freebitmapblock.status[i] = 0;
+		if ((*below->write)(below, 0, (block_t *)&snapshot->superblock) < 0) {
+			panic("ufs_alloc_block: failed to write\n");
+		}
+	}
+
+	return free_blockno;
+}
+
 /* Write *block at the given block number 'offset'.
 */
 static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
@@ -338,21 +372,57 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
 	}
 
 	while (1) {
-		/* Shouldn't matter if there is a hole or not, jsut write
-		*/
-		if ((*below->write)(below, blockToWrite, block) < 0) {
-			fprintf(stderr, "!!TDERR: Failure to write data block\n");
-			return -1;
+		//indirblock
+		struct ufs_indirblock ufsib;
+		//both branches check if we've reached the bottom level to break from loop
+		//offset gives a hole; need to alloc a new block
+		if (blockToWrite == 0) {
+			blockToWrite = ufs_alloc_block(below, &snapshot);
+			if (nlevels == 0) {
+				break;
+			}
+			memset(&ufsib, 0, BLOCK_SIZE);
 		}
-		if (nlevels == 0) break;
-
-		nlevels--;
-		struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
-		if (nlevels == 0) blockToWrite = tib->refs[offset];
+		//offset doesn't give a hole, check that we can read the block
 		else {
-			blockToWrite = tib->refs[offset / NUM_BLOCKS_LEVEL[nlevels]];
+			if (nlevels == 0) {
+				break;
+			}
+			if ((below->read)(below, blockToWrite, (block_t *) &ufsib) < 0) 
+			{
+				panic("unable to read during write\n")
+			}
+		}
+		//decrement level
+		nlevels--;
+		ufsib = (struct ufs_indirblock *) block;
+		if (nlevels == 0) blockToWrite = ufsib->refs[offset];
+		else {
+			blockToWrite = ufsib->refs[offset / NUM_BLOCKS_LEVEL[nlevels]];
 			offset = offset % NUM_BLOCKS_LEVEL[nlevels];
 		}
+
+		//// block is in a hole
+		//if (blockToWrite == 0) {
+		//	blockToWrite = ufs_alloc_block(below, &snapshot);
+		//	/*if ((*below->write)(below, blockToWrite, block) < 0) {
+		//		fprintf(stderr, "!!TDERR: Failure to write data block\n");
+		//	}*/
+		//}
+		//if ((*below->write)(below, blockToWrite, block) < 0) {
+		//	fprintf(stderr, "!!TDERR: Failure to write data block\n");
+		//	return -1;
+		//}
+		//if (nlevels == 0) break;
+
+		////indirect block
+		//nlevels--;
+		//struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
+		//if (nlevels == 0) blockToWrite = tib->refs[offset];
+		//else {
+		//	blockToWrite = tib->refs[offset / NUM_BLOCKS_LEVEL[nlevels]];
+		//	offset = offset % NUM_BLOCKS_LEVEL[nlevels];
+		//}
 	}
 
 	return 0;
