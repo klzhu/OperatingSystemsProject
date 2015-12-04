@@ -269,9 +269,74 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 }
 
 /* Write *block at the given block number 'offset'.
- */
-static int ufsdisk_write(block_if bi, block_no offset, block_t *block){
-	// TODO.
+*/
+static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
+	//validate inputs
+	if (bi == NULL || offset < 0 || block == NULL) {
+		fprintf(stderr, "!!TDERR: Invalid inputs in ufsdisk_read\n");
+		return -1;
+	}
+
+	struct ufs_state *us = bi->state;
+	block_if below = us->below;
+	block_no blockToWrite;
+	int nlevels = -1; //number of levels of the tree we need to traverse
+
+					  /* Get info from underlying file system.
+					  */
+	struct ufs_snapshot snapshot;
+	if (ufs_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
+		return -1;
+	}
+
+	/* See if the offset is too big.
+	*/
+	if (offset >= snapshot.inode->nblocks) {
+		fprintf(stderr, "!!TDERR: offset too large\n");
+		return -1;
+	}
+
+	/* Set nlevels & target block to write
+	*/
+	if (offset < NUM_DIRECT_BLOCKS) {
+		blockToWrite = snapshot.inode->refs[offset];
+		nlevels = 0;
+	}
+	else if (offset < NUM_SINGLE_INDIRECT_BLOCKS) {
+		blockToWrite = snapshot.inode->refs[SINGLE_INDIRECT_BLOCK_INDEX];
+		nlevels = 1;
+		offset -= NUM_DIRECT_BLOCKS;
+	}
+	else if (offset < NUM_DOUBLE_INDIRECT_BLOCKS) {
+		blockToWrite = snapshot.inode->refs[DOUBLE_INDIRECT_BLOCK_INDEX];
+		nlevels = 2;
+		offset -= NUM_SINGLE_INDIRECT_BLOCKS;
+	}
+	else {
+		blockToWrite = snapshot.inode->refs[TRIPLE_INDIRECT_BLOCK_INDEX];
+		nlevels = 3;
+		offset -= NUM_TRIPLE_INDIRECT_BLOCKS;
+	}
+
+	while (1) {
+		/* Shouldn't matter if there is a hole or not, jsut write
+		*/
+		if ((*below->write)(below, blockToWrite, block) < 0) {
+			fprintf(stderr, "!!TDERR: Failure to write data block\n");
+			return -1;
+		}
+		if (nlevels == 0) break;
+
+		nlevels--;
+		struct ufs_indirblock *tib = (struct ufs_indirblock *) block;
+		if (nlevels == 0) blockToWrite = tib->refs[offset];
+		else {
+			blockToWrite = tib->refs[offset / NUM_BLOCKS_LEVEL[nlevels]];
+			offset = offset % NUM_BLOCKS_LEVEL[nlevels];
+		}
+	}
+
+	return 0;
 }
 
 static void ufsdisk_destroy(block_if bi){
