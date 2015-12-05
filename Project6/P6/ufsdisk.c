@@ -35,8 +35,6 @@ static block_t null_block;			// a block filled with null bytes
 */
 struct ufs_state {
 	block_if below;		// block store below
-	block_no inode_no;	// inode number in file system
-
 	union ufs_block superblock;
 	union ufs_block inodeblock;	// the inodeblock that contains the inode
 	block_no inode_blockno;		// the index of the inodeblock 
@@ -448,7 +446,6 @@ block_if ufsdisk_init(block_if below, unsigned int inode_no){
 	// Create the block store state structure.
 	struct ufs_state *us = calloc(1, sizeof(*us));
 	us->below = below;
-	us->inode_no = inode_no;
 
 	// get super block
 	if ((*below->read)(below, 0, (block_t *)&us->superblock) < 0) {
