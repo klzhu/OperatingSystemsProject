@@ -23,7 +23,6 @@
 #include "block_if.h"
 #include "ufsdisk.h"
 
-const int NUM_BITS_IN_BYTES = 8;	// # of bits in a byte
 const int MAX_LEVEL = 4;
 const int NUM_BLOCKS_IN_LEVEL[4] = { REFS_PER_INODE - 3, REFS_PER_BLOCK, REFS_PER_BLOCK*REFS_PER_BLOCK, 
 				REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK };  // capacity (# of blocks) at each level
@@ -33,13 +32,15 @@ static block_t null_block;			// a block filled with null bytes
 
 /* The state of a virtual block store, which is identified by an inode number.
 */
-struct ufs_state {
+struct ufs_state
+{
 	block_if below;		// block store below
 	union ufs_block superblock;
 	union ufs_block inodeblock;	// the inodeblock that contains the inode
 	block_no inode_blockno;		// the index of the inodeblock 
 	struct ufs_inode *inode;	// It points to the inode
 };
+
 
 /* Retrieve the number of blocks in the file referenced by 'bi'. This information
  * is maintained in the inode itself.
@@ -74,7 +75,7 @@ static int ufsdisk_alloc_block(block_if bi, block_no *allocatedBlockIndex)
 		}
 
 		for (byteIdx = 0; byteIdx < BLOCK_SIZE; byteIdx++) {
-			unsigned char currBit = 0x8F; // initialize the byte with the leftest bit to be 1
+			unsigned char currBit = 0x80; // initialize the byte with the leftest bit to be 1
 			unsigned char currByte = freebitmapblock.freebitmapblock.status[byteIdx]; // get the current byte
 			for (i = 0; i < NUM_BITS_IN_BYTES; i++) { // check each bit of the current byte
 				if ((currBit & currByte) == 0) { // the block associated with the bit is available 
@@ -102,19 +103,25 @@ static int ufsdisk_free_block(block_if bi, block_no blockIndex)
 	struct ufs_state *us = bi->state;
 
 	block_no firstBlockIdx = 1 + us->superblock.superblock.n_inodeblocks + us->superblock.superblock.n_freebitmapblocks; // index of first remaining block
-	if (blockIndex < firstBlockIdx)  return -1; // error if the block index is not a remaining block
+	if (blockIndex < firstBlockIdx) {
+		fprintf(stderr, "!!UFSERR: a remaining block index (%d) is too small in ufsdisk_free_block.\n", blockIndex);
+		return -1; // error if the block index is not a remaining block
+	}
 
 	//figure out the freebitmap block where the block's bit is stored at, and the offset of the block index to the bitmap block
 	block_no freebitmapBlockIndex = (blockIndex - firstBlockIdx) / (BLOCK_SIZE * NUM_BITS_IN_BYTES);	// index relative to the first bitmap block for now
 	block_no offset = (blockIndex - firstBlockIdx) % (BLOCK_SIZE * NUM_BITS_IN_BYTES); // the block's index offset to the beginning of its bit map block
-	if (freebitmapBlockIndex >= us->superblock.superblock.n_freebitmapblocks) return -1; // error if the bitmap block index is too large
+	if (freebitmapBlockIndex >= us->superblock.superblock.n_freebitmapblocks) {
+		fprintf(stderr, "!!UFSERR: bitmap block index (%d) is too large in ufsdisk_free_block.\n", freebitmapBlockIndex);
+		return -1; // error if the bitmap block index is too large
+	}
 
 	freebitmapBlockIndex += us->superblock.superblock.n_inodeblocks + 1; // now it is the absolate index 
 
 	//retrieve the block from memory, reset the bit for our block, write the block back
 	union ufs_block freebitmapblock;
 	if ((*us->below->read)(us->below, freebitmapBlockIndex, (block_t *)&freebitmapblock) < 0) {
-		fprintf(stderr, "!!UFSERR: Failure to read data block in ufsdisk_updatefreebits.\n");
+		fprintf(stderr, "!!UFSERR: Failure to read data block in ufsdisk_free_block.\n");
 		return -1;
 	}
 
@@ -124,7 +131,7 @@ static int ufsdisk_free_block(block_if bi, block_no blockIndex)
 	freebitmapblock.freebitmapblock.status[byteIndex] &= ~(0x1 << (7 - bitToReset));
 
 	if ((*us->below->write)(us->below, freebitmapBlockIndex, (block_t *)&freebitmapblock) < 0) {
-		fprintf(stderr, "!!UFSERR: Failure to write data block in ufsdisk_updatefreebits.\n");
+		fprintf(stderr, "!!UFSERR: Failure to write data block in ufsdisk_free_block.\n");
 		return -1;
 	}
 
@@ -140,7 +147,7 @@ static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockInd
 	// read in indir block
 	struct ufs_indirblock indirBlock;
 	if ((*us->below->read)(us->below, blockIndex, (block_t *)&indirBlock) < 0) {
-		fprintf(stderr, "!!UFSERR: Failure to read data block in ufsdisk_traverseIndBlocks.\n");
+		fprintf(stderr, "!!UFSERR: Failure to read a block in ufsdisk_traverseIndBlocks.\n");
 		return -1;
 	}
 
@@ -149,7 +156,7 @@ static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockInd
 		for (k = 0; k < REFS_PER_BLOCK; k++) {
 			if (indirBlock.refs[k] != 0) {
 				if (ufsdisk_free_block(bi, indirBlock.refs[k]) < 0) {
-					fprintf(stderr, "!!UFSERR: Failure to read data block in ufsdisk_traverseIndBlocks.\n");
+					fprintf(stderr, "!!UFSERR: Failure to free a block in ufsdisk_traverseIndBlocks.\n");
 					return -1;
 				}
 			}
@@ -158,16 +165,16 @@ static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockInd
 		for (k = 0; k < REFS_PER_BLOCK; k++) {
 			if (indirBlock.refs[k] != 0) {
 				if (ufsdisk_traverseIndBlocks(bi, nlevels - 1, indirBlock.refs[k]) < 0) {
-					fprintf(stderr, "!!UFSERR: Failure to read data block in ufsdisk_traverseIndBlocks.\n");
+					fprintf(stderr, "!!UFSERR: Failure to free an indir block in ufsdisk_traverseIndBlocks.\n");
 					return -1;
 				}
 			}
 		}
 	}
 
-	// free teh indir block
+	// free the indir block
 	if (ufsdisk_free_block(bi, blockIndex) < 0) {
-		fprintf(stderr, "!!UFSERR: Failure to read data block in ufsdisk_traverseIndBlocks.\n");
+		fprintf(stderr, "!!UFSERR: Failure to free a block in ufsdisk_traverseIndBlocks.\n");
 		return -1;
 	}
 
@@ -209,7 +216,7 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 	block_no pointerIndex = (nlevels == 0) ? maxIndex : INDIRECT_INDEX[nlevels];
 	if (nlevels > 0) maxIndex = NUM_BLOCKS_IN_LEVEL[0] - 1; // max index for direct references
 
-	while (pointerIndex >= INDIRECT_INDEX[1]) { // when it is an indirect pointer
+	while (nlevels > 0) { // when it is an indirect pointer
 		if (us->inode->refs[pointerIndex] != 0) {
 			if (ufsdisk_traverseIndBlocks(bi, nlevels - 1, us->inode->refs[pointerIndex]) < 0) {
 				fprintf(stderr, "!!UFSERR: Failure to free an indir block in ufsdisk_setsize.\n");
@@ -220,6 +227,7 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 		}
 
 		pointerIndex--;
+		nlevels--;
 	}
 
 	// for nlevels == 0
@@ -493,13 +501,11 @@ block_if ufsdisk_init(block_if below, unsigned int inode_no){
  * K = nblocks - 1 - ceil(n_inodes/INODES_PER_BLOCK)
  */
 static block_no setup_freebitmapblocks(block_if below, block_no next_free, block_no nblocks){
-	//estimate the num of free bit blocks we need
-	unsigned int n_inodeblocks = next_free - 1; //the num of inode blocks
-	unsigned int K = nblocks - 1 - n_inodeblocks;
+	// get the num of free bitmap blocks we need
+	unsigned int K = nblocks - next_free; // K = # of bitmap blocks + # of remaining blocks, note that next_free = 1 + # of inode blocks
 	//block_no n_freebitmapblocks = (block_no)ceil(K / (1 + BLOCK_SIZE * NUM_BITS_IN_BYTES)); // estimate # of freebitmap blocks
 	block_no n_freebitmapblocks = 1;
 	block_no n_remaining_blocks = K - n_freebitmapblocks;
-	// correct the estimated freebitmap blocks if needed
 	while (n_remaining_blocks > n_freebitmapblocks * BLOCK_SIZE * NUM_BITS_IN_BYTES) { // iterate to get # of freebitmap blocks
 		n_freebitmapblocks++;
 		n_remaining_blocks--;

@@ -33,7 +33,7 @@
 #define REFS_PER_BLOCK		(BLOCK_SIZE / sizeof(block_no))
 #define REFS_PER_INODE		15
 #define MAGIC_NUMBER		0xEFE0
-
+#define NUM_BITS_IN_BYTES	8
 
 /* Contents of the "superblock". There is only one of these.
  */
@@ -82,3 +82,5 @@ union ufs_block {
 	struct ufs_freebitmapblock freebitmapblock;
 	struct ufs_indirblock indirblock;
 };
+
+
