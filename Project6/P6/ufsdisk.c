@@ -365,7 +365,9 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block) {
 		//both branches check if we've reached the bottom level to break from loop
 		//offset gives a hole; need to alloc a new block
 		if (blockToWrite == 0) {
-			blockToWrite = ufs_alloc_block(below, &snapshot);
+			if (blockToWrite = ufs_alloc_block(below, &snapshot) < 0) {
+				panic("failed to allocate new block\n");
+			}
 			if (nlevels == 0) {
 				break;
 			}
