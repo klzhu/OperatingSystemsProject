@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <string.h>
 #include "block_if.h"
+#include "ufsdisk.h"
 
 #define DISK_SIZE		(16 * 1024)		// size of "physical" disk
 #define MAX_INODES		128
@@ -45,8 +46,8 @@ int main(int argc, char **argv){
 
 	/* Virtualize the store, creating a collection of 64 virtual stores.
 	 */
-	if (ufsdisk_create(disk, MAX_INODES) < 0) {
-		panic("trace: can't create ufsdisk file system");
+	if (ufsdisk_create(disk, MAX_INODES, MAGIC_NUMBER) < 0) {
+		panic("trace: can't create nfsdisk file system");
 	}
 
 	/* Add a disk to keep track of statistics.
@@ -72,7 +73,7 @@ int main(int argc, char **argv){
 	(*xdisk->destroy)(xdisk);
 	(*cdisk->destroy)(cdisk);
 
-	/* No longer running ufsdisk or cachedisk code.
+	/* No longer running nfsdisk or cachedisk code.
 	 */
 	alarm(0);
 
@@ -84,7 +85,7 @@ int main(int argc, char **argv){
 
 	/* Check that disk just one more time for good measure.
 	 */
-	//treedisk_check(disk);
+	//ufsdisk_check(disk);
 
 	(*disk->destroy)(disk);
 

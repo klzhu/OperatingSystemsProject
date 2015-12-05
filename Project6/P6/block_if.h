@@ -81,3 +81,5 @@ void LRUdisk_dump_stats(block_if bi);
 void statdisk_dump_stats(block_if bi);
 int sandboxdisk_ischild(block_if bi);
 void sandboxdisk_rundisk(block_if bi, block_if within);
+int ufsdisk_create(block_if below, unsigned int n_inodes, unsigned int magic_number);
+block_if ufsdisk_init(block_if below, unsigned int inode_no);
