@@ -27,7 +27,7 @@ struct tracedisk_state {
 };
 
 struct virtdisk {
-	block_if ufsdisk;
+	block_if nfsdisk;
 	block_if checkdisk;
 };
 
@@ -54,9 +54,9 @@ static void tracedisk_run(struct tracedisk_state *ts,
 			fprintf(stderr, "block number too large\n");
 			break;
 		}
-		if (inodes[inode].ufsdisk == 0) {
-			inodes[inode].ufsdisk = ufsdisk_init(ts->below, inode);
-			inodes[inode].checkdisk = checkdisk_init(inodes[inode].ufsdisk, "tre");
+		if (inodes[inode].nfsdisk == 0) {
+			inodes[inode].nfsdisk = ufsdisk_init(ts->below, inode);
+			inodes[inode].checkdisk = checkdisk_init(inodes[inode].nfsdisk, "tre");
 		}
 		virt = inodes[inode].checkdisk;
 		static block_t block;
@@ -109,7 +109,7 @@ static void tracedisk_run(struct tracedisk_state *ts,
 		if ((virt = inodes[inode].checkdisk) != 0) {
 			(*virt->destroy)(virt);
 		}
-		if ((virt = inodes[inode].ufsdisk) != 0) {
+		if ((virt = inodes[inode].nfsdisk) != 0) {
 			(*virt->destroy)(virt);
 		}
 	}
