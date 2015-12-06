@@ -14,7 +14,8 @@ OBJECTS = \
 	tracedisk.o \
 	treedisk.o \
 	treedisk_chk.o \
-	ufsdisk.o
+	ufsdisk.o \
+	ufsdisk_chk.o
 
 all: trace chktrace
 

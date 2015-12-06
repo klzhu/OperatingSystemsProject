@@ -22,7 +22,7 @@ static void sigalrm(int s){
 }
 
 int main(int argc, char **argv){
-	char *trace = argc == 1 ? "trace.txt" : argv[1];
+	char *trace = argc == 1 ? "trace2.txt" : argv[1];
 	int cache_size = argc > 2 ? atoi(argv[2]) : 16;
 	int ramdisk = 1;
 
