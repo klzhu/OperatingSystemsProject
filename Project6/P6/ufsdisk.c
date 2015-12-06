@@ -23,55 +23,74 @@
 #include "block_if.h"
 #include "ufsdisk.h"
 
-const int MAX_LEVEL = 4;
-const int NUM_BLOCKS_IN_LEVEL[4] = { REFS_PER_INODE - 3, REFS_PER_BLOCK, REFS_PER_BLOCK*REFS_PER_BLOCK, 
+static const int MAX_LEVEL = 4;
+static const int NUM_BLOCKS_IN_LEVEL[4] = { REFS_PER_INODE - 3, REFS_PER_BLOCK, REFS_PER_BLOCK*REFS_PER_BLOCK,
 				REFS_PER_BLOCK * REFS_PER_BLOCK * REFS_PER_BLOCK };  // capacity (# of blocks) at each level
-const int INDIRECT_INDEX[4] = {0, REFS_PER_INODE - 3, REFS_PER_INODE - 2, REFS_PER_INODE - 1 }; // (starting) index of direct and 1-3 indir levels
+static const int INDIRECT_INDEX[4] = { 0, REFS_PER_INODE - 3, REFS_PER_INODE - 2, REFS_PER_INODE - 1 }; // (starting) index of direct and 1-3 indir levels
 
 static block_t null_block;			// a block filled with null bytes
 
-/* The state of a virtual block store, which is identified by an inode number.
+/* Temporary information about the file system and a particular inode.
+* Convenient for all operations.
 */
-struct ufs_state
+struct ufsdisk_snapshot
 {
-	block_if below;		// block store below
 	union ufs_block superblock;
 	union ufs_block inodeblock;	// the inodeblock that contains the inode
 	block_no inode_blockno;		// the index of the inodeblock 
 	struct ufs_inode *inode;	// It points to the inode
 };
 
+/* The state of a virtual block store, which is identified by an inode number.
+*/
+struct ufsdisk_state
+{
+	block_if below;		// block store below
+	block_no inode_no;	// The index of the inode (among all inodes)
+};
 
-/* Retrieve the number of blocks in the file referenced by 'bi'. This information
- * is maintained in the inode itself.
- */
-static int ufsdisk_nblocks(block_if bi){	
-	//validate inputs
-	if (bi == NULL)
-	{
-		fprintf(stderr, "!!UFSERR: Invalid input in ufsdisk_nblocks\n");
+/* Get a snapshot of the file system, including the superblock and the block
+* containing the inode.
+*/
+static int ufsdisk_get_snapshot(struct ufsdisk_snapshot *snapshot, block_if below, unsigned int inode_no)
+{
+	// get super block
+	if ((*below->read)(below, 0, (block_t *)&snapshot->superblock) < 0) {
 		return -1;
 	}
-	struct ufs_state *us = bi->state;
-	return us->inode->nblocks;
+
+	// Check the inode number
+	if (inode_no >= snapshot->superblock.superblock.n_inodeblocks * INODES_PER_BLOCK) {
+		fprintf(stderr, "!!UFSERR: inode number too large %u %u\n", inode_no, snapshot->superblock.superblock.n_inodeblocks);
+		return -1;
+	}
+
+	// Find the inode
+	snapshot->inode_blockno = 1 + inode_no / INODES_PER_BLOCK;
+	if ((*below->read)(below, snapshot->inode_blockno, (block_t *)&snapshot->inodeblock) < 0) {
+		return -1;
+	}
+	snapshot->inode = &snapshot->inodeblock.inodeblock.inodes[inode_no % INODES_PER_BLOCK];
+	return 0;
 }
 
-// It allocates a block with its block index in allocatedBlockIndex. 
-// It return 0 if successful or -1 is failed.
-static int ufsdisk_alloc_block(block_if bi, block_no *allocatedBlockIndex)
+// It allocates a block and returns its block index if successful or 0 if failed (node that block 0 is invalid 
+// since it is always for superblock
+static block_no ufsdisk_alloc_block(block_if bi, struct ufsdisk_snapshot *snapshot)
 {
 	int i, k, byteIdx;
-	struct ufs_state *us = bi->state;
+	struct ufsdisk_state *us = bi->state;
 	
 	// initialize to the index of the first remaining block
-	*allocatedBlockIndex = 1 + us->superblock.superblock.n_inodeblocks + us->superblock.superblock.n_freebitmapblocks; 
+	block_no retIdx = 1 + snapshot->superblock.superblock.n_inodeblocks + snapshot->superblock.superblock.n_freebitmapblocks;
 
 	// Read the freelist block and scan for a free block.
-	block_no firstBitmapIndex = 1 + us->superblock.superblock.n_inodeblocks; 
-	for (k = 0; k < us->superblock.superblock.n_freebitmapblocks; k++) {
+	block_no firstBitmapIndex = 1 + snapshot->superblock.superblock.n_inodeblocks;
+	for (k = 0; k < snapshot->superblock.superblock.n_freebitmapblocks; k++) {
 		union ufs_block freebitmapblock;
 		if ((*us->below->read)(us->below, k + firstBitmapIndex, (block_t *)&freebitmapblock) < 0) {
-			panic("ufsdisk_alloc_block()");
+			fprintf(stderr, "!!UFSERR: Failed in reading a block in ufsdisk_alloc_block\n");
+			return -1;
 		}
 
 		for (byteIdx = 0; byteIdx < BLOCK_SIZE; byteIdx++) {
@@ -82,27 +101,28 @@ static int ufsdisk_alloc_block(block_if bi, block_no *allocatedBlockIndex)
 					currByte |= currBit; // set the bit to 1 to indicate its block is assigned
 					freebitmapblock.freebitmapblock.status[byteIdx] = currByte;
 					if ((*us->below->write)(us->below, k + firstBitmapIndex, (block_t *)&freebitmapblock) < 0) {
-						panic("ufsdisk_alloc_block()");
+						fprintf(stderr, "!!UFSERR: Failed in writing a block in ufsdisk_alloc_block\n");
+						return -1;
 					}
 
-					return 0;
+					return retIdx;
 				} else {
 					currBit >>= 1;	// right shift the current bit by 1
-					(*allocatedBlockIndex)++;	// increase the block index by 1
+					retIdx++;	// increase the block index by 1
 				}
 			}
 		}
 	}
 
-	return -1;	// no free block available
+	return 0;	// no free block available, return an invalid block index
 }
 
 // It frees the block at blockIndex, and returns 0 or -1 if successful or failure
-static int ufsdisk_free_block(block_if bi, block_no blockIndex)
+static int ufsdisk_free_block(block_if bi, block_no blockIndex, struct ufsdisk_snapshot *snapshot)
 {
-	struct ufs_state *us = bi->state;
+	struct ufsdisk_state *us = bi->state;
 
-	block_no firstBlockIdx = 1 + us->superblock.superblock.n_inodeblocks + us->superblock.superblock.n_freebitmapblocks; // index of first remaining block
+	block_no firstBlockIdx = 1 + snapshot->superblock.superblock.n_inodeblocks + snapshot->superblock.superblock.n_freebitmapblocks; // index of first remaining block
 	if (blockIndex < firstBlockIdx) {
 		fprintf(stderr, "!!UFSERR: a remaining block index (%d) is too small in ufsdisk_free_block.\n", blockIndex);
 		return -1; // error if the block index is not a remaining block
@@ -111,12 +131,12 @@ static int ufsdisk_free_block(block_if bi, block_no blockIndex)
 	//figure out the freebitmap block where the block's bit is stored at, and the offset of the block index to the bitmap block
 	block_no freebitmapBlockIndex = (blockIndex - firstBlockIdx) / (BLOCK_SIZE * NUM_BITS_IN_BYTES);	// index relative to the first bitmap block for now
 	block_no offset = (blockIndex - firstBlockIdx) % (BLOCK_SIZE * NUM_BITS_IN_BYTES); // the block's index offset to the beginning of its bit map block
-	if (freebitmapBlockIndex >= us->superblock.superblock.n_freebitmapblocks) {
+	if (freebitmapBlockIndex >= snapshot->superblock.superblock.n_freebitmapblocks) {
 		fprintf(stderr, "!!UFSERR: bitmap block index (%d) is too large in ufsdisk_free_block.\n", freebitmapBlockIndex);
 		return -1; // error if the bitmap block index is too large
 	}
 
-	freebitmapBlockIndex += us->superblock.superblock.n_inodeblocks + 1; // now it is the absolate index 
+	freebitmapBlockIndex += snapshot->superblock.superblock.n_inodeblocks + 1; // now it is the absolate index 
 
 	//retrieve the block from memory, reset the bit for our block, write the block back
 	union ufs_block freebitmapblock;
@@ -140,9 +160,9 @@ static int ufsdisk_free_block(block_if bi, block_no blockIndex)
 
 // It frees all blocks references by indir block at blockIndex
 // nlevels is the level of the indir block's reference
-static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockIndex)
+static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockIndex, struct ufsdisk_snapshot *snapshot)
 {
-	struct ufs_state *us = bi->state;
+	struct ufsdisk_state *us = bi->state;
 
 	// read in indir block
 	struct ufs_indirblock indirBlock;
@@ -155,7 +175,7 @@ static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockInd
 	if (nlevels == 0) { // it points to data blocks
 		for (k = 0; k < REFS_PER_BLOCK; k++) {
 			if (indirBlock.refs[k] != 0) {
-				if (ufsdisk_free_block(bi, indirBlock.refs[k]) < 0) {
+				if (ufsdisk_free_block(bi, indirBlock.refs[k], snapshot) < 0) {
 					fprintf(stderr, "!!UFSERR: Failure to free a block in ufsdisk_traverseIndBlocks.\n");
 					return -1;
 				}
@@ -164,7 +184,7 @@ static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockInd
 	} else { // it points to indir blocks
 		for (k = 0; k < REFS_PER_BLOCK; k++) {
 			if (indirBlock.refs[k] != 0) {
-				if (ufsdisk_traverseIndBlocks(bi, nlevels - 1, indirBlock.refs[k]) < 0) {
+				if (ufsdisk_traverseIndBlocks(bi, nlevels - 1, indirBlock.refs[k], snapshot) < 0) {
 					fprintf(stderr, "!!UFSERR: Failure to free an indir block in ufsdisk_traverseIndBlocks.\n");
 					return -1;
 				}
@@ -173,12 +193,31 @@ static int ufsdisk_traverseIndBlocks(block_if bi, int nlevels, block_no blockInd
 	}
 
 	// free the indir block
-	if (ufsdisk_free_block(bi, blockIndex) < 0) {
+	if (ufsdisk_free_block(bi, blockIndex, snapshot) < 0) {
 		fprintf(stderr, "!!UFSERR: Failure to free a block in ufsdisk_traverseIndBlocks.\n");
 		return -1;
 	}
 
 	return 0;
+}
+
+/* Retrieve the number of blocks in the file referenced by 'bi'. This information
+* is maintained in the inode itself.
+*/
+static int ufsdisk_nblocks(block_if bi)
+{
+	//validate inputs
+	if (bi == NULL) {
+		fprintf(stderr, "!!UFSERR: Invalid input in ufsdisk_nblocks\n");
+		return -1;
+	}
+
+	struct ufsdisk_state *us = bi->state;
+	struct ufsdisk_snapshot snapshot;
+	if (ufsdisk_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
+		return -1;
+	}
+	return snapshot.inode->nblocks;
 }
 
 /* Set the size of the file 'bi' to 'nblocks'.
@@ -190,8 +229,13 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 		return -1;
 	}
 
-	struct ufs_state *us = bi->state;
-	if (us->inode->nblocks == nblocks) return nblocks;
+	struct ufsdisk_state *us = bi->state;
+	struct ufsdisk_snapshot snapshot;
+	if (ufsdisk_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
+		return -1;
+	}
+
+	if (snapshot.inode->nblocks == nblocks) return nblocks;
 
 	if (nblocks > 0) {
 		fprintf(stderr, "!!UFSERR: nblocks > 0 not supported\n");
@@ -199,7 +243,7 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 	}
 
 	// Release all the blocks used by this inode
-	block_no nblocksOrig = us->inode->nblocks;
+	block_no nblocksOrig = snapshot.inode->nblocks;
 	block_no maxIndex = nblocksOrig - 1;
 	
 	// figure out maxIndex's levels and offset to the begining index of the pointer's range of indexes
@@ -217,13 +261,13 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 	if (nlevels > 0) maxIndex = NUM_BLOCKS_IN_LEVEL[0] - 1; // max index for direct references
 
 	while (nlevels > 0) { // when it is an indirect pointer
-		if (us->inode->refs[pointerIndex] != 0) {
-			if (ufsdisk_traverseIndBlocks(bi, nlevels - 1, us->inode->refs[pointerIndex]) < 0) {
+		if (snapshot.inode->refs[pointerIndex] != 0) {
+			if (ufsdisk_traverseIndBlocks(bi, nlevels - 1, snapshot.inode->refs[pointerIndex], &snapshot) < 0) {
 				fprintf(stderr, "!!UFSERR: Failure to free an indir block in ufsdisk_setsize.\n");
 				return -1;
 			}
 
-			us->inode->refs[pointerIndex] = 0;
+			snapshot.inode->refs[pointerIndex] = 0;
 		}
 
 		pointerIndex--;
@@ -233,19 +277,19 @@ static int ufsdisk_setsize(block_if bi, block_no nblocks){
 	// for nlevels == 0
 	block_no k;
 	for (k = 0; k <= maxIndex; k++) {
-		if (us->inode->refs[k] != 0) {
-			if (ufsdisk_free_block(bi, us->inode->refs[k]) < 0) {
+		if (snapshot.inode->refs[k] != 0) {
+			if (ufsdisk_free_block(bi, snapshot.inode->refs[k], &snapshot) < 0) {
 				fprintf(stderr, "!!UFSERR: Failure to free a block in ufsdisk_setsize\n");
 				return -1;
 			}
 
-			us->inode->refs[k] = 0;
+			snapshot.inode->refs[k] = 0;
 		}
 	}
 	
 	//set size to 0, write back t disk
-	us->inode->nblocks = nblocks;
-	if ((*us->below->write)(us->below, us->inode_blockno, (block_t *)&us->inodeblock) < 0) {
+	snapshot.inode->nblocks = nblocks;
+	if ((*us->below->write)(us->below, snapshot.inode_blockno, (block_t *)&snapshot.inodeblock) < 0) {
 		panic("ufsdisk_setsize");
 	}
 
@@ -261,10 +305,14 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 		return -1;
 	}
 
-	struct ufs_state *us = bi->state;
+	struct ufsdisk_state *us = bi->state;
+	struct ufsdisk_snapshot snapshot;
+	if (ufsdisk_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
+		return -1;
+	}
 
 	// See if the offset is too big.
-	if (offset >= us->inode->nblocks) {
+	if (offset >= snapshot.inode->nblocks) {
 		fprintf(stderr, "!!UFSERR: offset too large\n");
 		return -1;
 	}
@@ -280,7 +328,7 @@ static int ufsdisk_read(block_if bi, block_no offset, block_t *block){
 		return -1;
 	}
 
-	block_no blockToRead = us->inode->refs[(nlevels == 0) ? offset : INDIRECT_INDEX[nlevels]];
+	block_no blockToRead = snapshot.inode->refs[(nlevels == 0) ? offset : INDIRECT_INDEX[nlevels]];
 	while (true) {
 		// If there's a hole, return the null block.
 		if (blockToRead == 0) {
@@ -319,12 +367,17 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block){
 		return -1;
 	}
 
-	struct ufs_state *us = bi->state;
+	struct ufsdisk_state *us = bi->state;
+	struct ufsdisk_snapshot snapshot;
+	if (ufsdisk_get_snapshot(&snapshot, us->below, us->inode_no) < 0) {
+		return -1;
+	}
+
 	bool dirtyNode = false;	// is the current inode or indir block updated?
 
 	// if offset is beyond inode's size, expand to cover the offset
-	if (offset >= us->inode->nblocks) {
-		us->inode->nblocks = offset + 1;
+	if (offset >= snapshot.inode->nblocks) {
+		snapshot.inode->nblocks = offset + 1;
 		dirtyNode = true;
 	}
 
@@ -342,8 +395,9 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block){
 	block_no blockIdx = (nlevels == 0) ? offset : INDIRECT_INDEX[nlevels]; // index in the inode's array
 	bool newIndirBlock = false; // if the next level's indir block updated?
 	struct ufs_indirblock indirBlock;
-	if (us->inode->refs[blockIdx] == 0) { // if the innode pointer does not point to a block, allocate a block & point to it
-		if (ufsdisk_alloc_block(bi, &us->inode->refs[blockIdx]) < 0) {
+	if (snapshot.inode->refs[blockIdx] == 0) { // if the innode pointer does not point to a block, allocate a block & point to it
+		snapshot.inode->refs[blockIdx] = ufsdisk_alloc_block(bi, &snapshot);
+		if (snapshot.inode->refs[blockIdx] == 0) {
 			fprintf(stderr, "!!UFSERR: Failure to allocate a block in ufsdisk_write.\n");
 			return -1;
 		}
@@ -353,14 +407,14 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block){
 	} 
 
 	if (dirtyNode) { // If the inode block was updated, write it back now.
-		if ((*us->below->write)(us->below, us->inode_blockno, (block_t *)&us->inodeblock) < 0) {
+		if ((*us->below->write)(us->below, snapshot.inode_blockno, (block_t *)&snapshot.inodeblock) < 0) {
 			fprintf(stderr, "!!UFSERR: Failure to write a block in ufsdisk_write.\n");
 			return -1;
 		}
 	}
 
 	dirtyNode = false;
-	blockIdx = us->inode->refs[blockIdx]; // the index of the current block
+	blockIdx = snapshot.inode->refs[blockIdx]; // the index of the current block
 	if (nlevels > 0) { // the block is an indir block
 		if (newIndirBlock) {
 			memset(&indirBlock, 0, BLOCK_SIZE);	// reset new indir block
@@ -371,11 +425,6 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block){
 				return -1;
 			}
 		}
-	}
-
-	if (newIndirBlock) { // if the current block is a new indir block
-		memset(&indirBlock, 0, BLOCK_SIZE);	// reset new indir block
-		dirtyNode = true;
 	}
 
 	while (true) {
@@ -402,7 +451,8 @@ static int ufsdisk_write(block_if bi, block_no offset, block_t *block){
 
 		newIndirBlock = false;
 		if (indirBlock.refs[blockOffset] == 0) {
-			if (ufsdisk_alloc_block(bi, &indirBlock.refs[blockOffset]) < 0) { // allocate a block
+			indirBlock.refs[blockOffset] = ufsdisk_alloc_block(bi, &snapshot);
+			if (indirBlock.refs[blockOffset] == 0) { // allocate a block
 				fprintf(stderr, "!!UFSERR: Failure to allocate a block in ufsdisk_write.\n");
 				return -1;
 			}
@@ -451,30 +501,16 @@ block_if ufsdisk_init(block_if below, unsigned int inode_no){
 		return NULL;
 	}
 
+	// Get info from underlying file system.
+	struct ufsdisk_snapshot snapshot;
+	if (ufsdisk_get_snapshot(&snapshot, below, inode_no) < 0) {
+		return 0;
+	}
+
 	// Create the block store state structure.
-	struct ufs_state *us = calloc(1, sizeof(*us));
+	struct ufsdisk_state *us = calloc(1, sizeof(*us));
 	us->below = below;
-
-	// get super block
-	if ((*below->read)(below, 0, (block_t *)&us->superblock) < 0) {
-		free(us);
-		return NULL;
-	}
-
-	// Check the inode number.
-	if (inode_no >= us->superblock.superblock.n_inodeblocks * INODES_PER_BLOCK) {
-		fprintf(stderr, "!!UFSERR: inode number too large %u %u\n", inode_no, us->superblock.superblock.n_inodeblocks);
-		free(us);
-		return NULL;
-	}
-
-	// Find the inode.
-	us->inode_blockno = 1 + inode_no / INODES_PER_BLOCK;
-	if ((*below->read)(below, us->inode_blockno, (block_t *)&us->inodeblock) < 0) {
-		free(us);
-		return NULL;
-	}
-	us->inode = &us->inodeblock.inodeblock.inodes[inode_no % INODES_PER_BLOCK];
+	us->inode_no = inode_no;
 
 	// Return a block interface to this inode.
 	block_if bi = calloc(1, sizeof(*bi));

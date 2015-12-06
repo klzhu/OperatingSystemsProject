@@ -43,7 +43,6 @@ int main(int argc, char **argv){
 	 */
 	signal(SIGALRM, sigalrm);
 	alarm(5);
-
 	/* Virtualize the store, creating a collection of 64 virtual stores.
 	 */
 	if (ufsdisk_create(disk, MAX_INODES, MAGIC_NUMBER) < 0) {
@@ -85,7 +84,11 @@ int main(int argc, char **argv){
 
 	/* Check that disk just one more time for good measure.
 	 */
-	//ufsdisk_check(disk);
+	if (ufsdisk_check(disk) < 0) {
+		fprintf(stderr, "!!ERROR: nfsdisk_check has failed.\n");
+	} else {
+		fprintf(stderr, "GREAT!! nfsdisk_check has succeeded.\n");
+	}
 
 	(*disk->destroy)(disk);
 
